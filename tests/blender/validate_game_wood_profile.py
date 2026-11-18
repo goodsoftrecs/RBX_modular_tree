@@ -32,7 +32,8 @@ try:
 
     def generate(profile: str, preset: str = "OAK"):
         settings = SimpleNamespace(preset=preset, wood_output_profile=profile)
-        return operators.QuickGenerateTree._generate_tree(settings, 1234)
+        mesh, _ = operators.QuickGenerateTree._generate_tree(settings, 1234)
+        return mesh
 
     def mesh_counts(mesh):
         return (len(mesh.get_vertices()) // 3, len(mesh.get_polygons()) // 4)
@@ -65,7 +66,7 @@ try:
     assert game_counts[1] < authoring_counts[1]
     assert polygon_ratio <= 0.50
     for seed in (42, 1234, 6676, 9999):
-        seed_budget_mesh = operators.QuickGenerateTree._generate_tree(
+        seed_budget_mesh, _ = operators.QuickGenerateTree._generate_tree(
             SimpleNamespace(preset="OAK", wood_output_profile=profiles.ROBLOX_GAME_BUDGET),
             seed,
         )

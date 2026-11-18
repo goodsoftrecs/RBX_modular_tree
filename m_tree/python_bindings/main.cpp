@@ -1,11 +1,13 @@
-#include <iostream>
+#include <array>
 #include <exception>
+#include <iostream>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 
 #include "source/mesh/Mesh.hpp"
+#include "source/tree/FoliageAnchor.hpp"
 #include "source/tree/Tree.hpp"
 #include "source/tree_functions/base_types/Property.hpp"
 #include "source/tree_functions/TrunkFunction.hpp"
@@ -235,6 +237,24 @@ PYBIND11_MODULE(m_tree, m) {
         .def("set_trunk_function", &Tree::set_first_function)
         .def("get_trunk_function", &Tree::get_first_function)
         .def("execute_functions", &Tree::execute_functions);
+
+    py::class_<FoliageAnchor>(m, "FoliageAnchor")
+        .def_property_readonly("position", [](const FoliageAnchor& anchor)
+            {
+                return std::array<float, 3>{
+                    anchor.position[0], anchor.position[1], anchor.position[2]};
+            })
+        .def_property_readonly("direction", [](const FoliageAnchor& anchor)
+            {
+                return std::array<float, 3>{
+                    anchor.direction[0], anchor.direction[1], anchor.direction[2]};
+            })
+        .def_readonly("radius", &FoliageAnchor::radius)
+        .def_readonly("hierarchy_depth", &FoliageAnchor::hierarchy_depth)
+        .def_readonly("branch_id", &FoliageAnchor::branch_id)
+        .def_readonly("branch_progress", &FoliageAnchor::branch_progress);
+
+    m.def("extract_foliage_anchors", &extract_foliage_anchors);
 
     py::class_<Mesh>(m, "Mesh")
         .def("get_vertices", [](const Mesh& mesh)

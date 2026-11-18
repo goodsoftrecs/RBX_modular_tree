@@ -6,6 +6,7 @@
 
 #include "source/mesh/Mesh.hpp"
 #include "source/tree/Tree.hpp"
+#include "source/tree/FoliageAnchor.hpp"
 #include "source/tree_functions/TrunkFunction.hpp"
 #include "source/tree_functions/BranchFunction.hpp"
 #include "source/tree_functions/GrowthFunction.hpp"
@@ -125,6 +126,49 @@ TEST(manifold_branch_depth_pruning_reduces_geometry)
 			ASSERT_TRUE(vertex_index < static_cast<int>(pruned_mesh.vertices.size()));
 		}
 	}
+}
+
+TEST(foliage_anchors_are_deterministic_and_independent_of_mesh_pruning)
+{
+	auto trunk = std::make_shared<TrunkFunction>();
+	auto branches = std::make_shared<BranchFunction>();
+	auto sub_branches = std::make_shared<BranchFunction>();
+	branches->add_child(sub_branches);
+	trunk->add_child(branches);
+	Tree tree(trunk);
+	tree.execute_functions();
+
+	const auto first = extract_foliage_anchors(tree);
+	const auto second = extract_foliage_anchors(tree);
+	ASSERT_GT(static_cast<int>(first.size()), 0);
+	ASSERT_EQ(first.size(), second.size());
+
+	int maximum_anchor_depth = 0;
+	for (size_t index = 0; index < first.size(); ++index)
+	{
+		const auto& lhs = first[index];
+		const auto& rhs = second[index];
+		ASSERT_TRUE((lhs.position - rhs.position).norm() < 1e-6f);
+		ASSERT_TRUE((lhs.direction - rhs.direction).norm() < 1e-6f);
+		ASSERT_TRUE(std::abs(lhs.radius - rhs.radius) < 1e-6f);
+		ASSERT_EQ(lhs.hierarchy_depth, rhs.hierarchy_depth);
+		ASSERT_EQ(lhs.branch_id, rhs.branch_id);
+		ASSERT_TRUE(std::abs(lhs.branch_progress - rhs.branch_progress) < 1e-6f);
+		ASSERT_TRUE(lhs.branch_progress > 0.0f && lhs.branch_progress <= 1.0f);
+		maximum_anchor_depth = std::max(maximum_anchor_depth, lhs.hierarchy_depth);
+	}
+
+	ManifoldMesher pruned_mesher;
+	pruned_mesher.radial_resolution = 8;
+	pruned_mesher.max_branch_depth = 1;
+	const Mesh pruned_mesh = pruned_mesher.mesh_tree(tree);
+	const auto& depth_attribute = *static_cast<Attribute<float>*>(
+	    pruned_mesh.attributes.at(ManifoldMesher::AttributeNames::hierarchy_depth).get());
+	float maximum_mesh_depth = 0.0f;
+	for (const float depth : depth_attribute.data)
+		maximum_mesh_depth = std::max(maximum_mesh_depth, depth);
+
+	ASSERT_TRUE(maximum_anchor_depth > maximum_mesh_depth);
 }
 
 // =====================================================================

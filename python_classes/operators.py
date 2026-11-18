@@ -13,6 +13,8 @@ from .canopy_lobes import (
     organize_tree_object,
     refresh_canopy_for_object,
 )
+from .foliage_anchor_data import anchors_from_native, store_anchor_payload
+from .foliage_cards import ensure_foliage_card_template, refresh_foliage_cards_for_object
 from .m_tree_wrapper import lazy_m_tree as m_tree
 from .mesh_utils import create_mesh_from_cpp
 from .game_output_profiles import (
@@ -151,9 +153,12 @@ class QuickGenerateTree(bpy.types.Operator):
             seed = self.seed if self.seed != 0 else randint(0, 10000)
             start_time = time.time()
 
-            cpp_mesh = self._generate_tree(seed)
+            cpp_mesh, foliage_anchors = self._generate_tree(seed)
             tree_object = self._create_blender_object(context, cpp_mesh, f"Tree_{seed}")
             organize_tree_object(tree_object, generation_seed=seed)
+            store_anchor_payload(tree_object, foliage_anchors)
+            tree_object["mtree_generation_preset"] = self.preset
+            tree_object["mtree_wood_output_profile"] = self.wood_output_profile
 
             if self.add_leaves:
                 active_obj = context.view_layer.objects.active
@@ -196,6 +201,8 @@ class QuickGenerateTree(bpy.types.Operator):
         tree.set_trunk_function(trunk)
         tree.execute_functions()
 
+        foliage_anchors = anchors_from_native(m_tree.extract_foliage_anchors(tree))
+
         mesher = m_tree.ManifoldMesher()
         settings = resolve_wood_mesher_settings(self.wood_output_profile, 32, 4)
         mesher.radial_n_points = settings.radial_resolution
@@ -203,7 +210,7 @@ class QuickGenerateTree(bpy.types.Operator):
         mesher.longitudinal_stride = settings.longitudinal_stride
         mesher.max_branch_depth = settings.max_branch_depth
         mesher.minimum_branch_radius_ratio = settings.minimum_branch_radius_ratio
-        return mesher.mesh_tree(tree)
+        return mesher.mesh_tree(tree), foliage_anchors
 
     def _create_blender_object(self, context, cpp_mesh, name: str):
         """Create Blender mesh object from C++ mesh data."""
@@ -364,6 +371,48 @@ class RefreshCanopyLobes(bpy.types.Operator):
             return {"CANCELLED"}
 
 
+class CreateFoliageCardTemplate(bpy.types.Operator):
+    """Create the editable source quad used by every foliage card pair."""
+
+    bl_idname = "mtree.create_foliage_card_template"
+    bl_label = "Create Foliage Card Template"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        try:
+            template, created = ensure_foliage_card_template()
+            action = "created" if created else "preserved"
+            self.report({"INFO"}, f"Foliage card template {action}: {template.name}")
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Failed to create foliage card template: {exc}")
+            return {"CANCELLED"}
+
+
+class RefreshFoliageCards(bpy.types.Operator):
+    """Generate or refresh the active tree's branch-aligned card pairs."""
+
+    bl_idname = "mtree.refresh_foliage_cards"
+    bl_label = "Generate / Refresh Foliage Cards"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+
+    def execute(self, context):
+        try:
+            foliage, clusters, cards = refresh_foliage_cards_for_object(context.active_object)
+            self.report(
+                {"INFO"},
+                f"Generated {clusters} foliage clusters / {cards} cards in {foliage.name}",
+            )
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Failed to refresh foliage cards: {exc}")
+            return {"CANCELLED"}
+
+
 class GenerateLeaf(bpy.types.Operator):
     """Generate a procedural leaf mesh from LeafShapeNode parameters."""
 
@@ -482,6 +531,8 @@ _classes = [
     QuickGenerateTree,
     CreateCanopyLobes,
     RefreshCanopyLobes,
+    CreateFoliageCardTemplate,
+    RefreshFoliageCards,
     ExportPivotPainter,
     GenerateLeaf,
     ApplyLeafPreset,

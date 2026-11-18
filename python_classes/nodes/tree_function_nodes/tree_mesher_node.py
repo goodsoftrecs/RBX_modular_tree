@@ -13,6 +13,7 @@ from ...game_output_profiles import (
     WOOD_OUTPUT_PROFILE_ITEMS,
     resolve_wood_mesher_settings,
 )
+from ...foliage_anchor_data import anchors_from_native, store_anchor_payload
 from ..base_types.node import MtreeNode
 from ..debounce import schedule_build
 
@@ -139,8 +140,10 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
             tree.set_trunk_function(trunk_function)
             tree.execute_functions()
 
+            foliage_anchors = anchors_from_native(m_tree.extract_foliage_anchors(tree))
             cpp_mesh = self._mesh_tree(tree)
             self._output_to_blender(cpp_mesh)
+            store_anchor_payload(self.get_current_tree_object(), foliage_anchors)
 
             elapsed = time.time() - start_time
             self.status_message = f"Generated in {elapsed:.2f}s"

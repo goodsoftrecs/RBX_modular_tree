@@ -24,17 +24,21 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
         box.operator("mtree.quick_generate", text="Generate Tree")
 
         canopy_box = layout.box()
-        canopy_box.label(text="Canopy Lobes", icon="OUTLINER_OB_META")
-        canopy_box.operator("mtree.create_canopy_lobes", text="Create Canopy Lobes")
+        canopy_box.label(text="Foliage Cards", icon="OUTLINER_OB_MESH")
+        canopy_box.operator(
+            "mtree.create_foliage_card_template", text="Create Foliage Card Template"
+        )
 
         wood = find_wood_for_object(context.active_object)
         if wood is not None:
-            canopy_box.prop(wood, "mtree_lobe_count")
-            canopy_box.prop(wood, "mtree_lobe_scale")
-            canopy_box.prop(wood, "mtree_canopy_seed")
+            canopy_box.prop(wood, "mtree_foliage_cluster_count")
+            canopy_box.prop(wood, "mtree_foliage_card_scale")
+            canopy_box.prop(wood, "mtree_foliage_seed")
         refresh_row = canopy_box.row()
         refresh_row.enabled = wood is not None
-        refresh_row.operator("mtree.refresh_canopy_lobes", text="Generate / Refresh Lobes")
+        refresh_row.operator(
+            "mtree.refresh_foliage_cards", text="Generate / Refresh Foliage Cards"
+        )
 
         # Tips section
         layout.separator()
