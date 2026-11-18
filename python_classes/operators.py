@@ -8,6 +8,11 @@ from random import randint
 import bpy
 from bpy.utils import register_class, unregister_class
 
+from .canopy_lobes import (
+    ensure_canopy_templates,
+    organize_tree_object,
+    refresh_canopy_for_object,
+)
 from .m_tree_wrapper import lazy_m_tree as m_tree
 from .mesh_utils import create_mesh_from_cpp
 from .game_output_profiles import (
@@ -123,7 +128,9 @@ class QuickGenerateTree(bpy.types.Operator):
     )
     preset: bpy.props.EnumProperty(name="Preset", items=get_preset_items(), default="RANDOM")
     add_leaves: bpy.props.BoolProperty(
-        name="Add Leaves", default=True, description="Automatically add leaf distribution"
+        name="Add Legacy Leaves",
+        default=False,
+        description="Add the original high-detail procedural leaves instead of canopy lobes",
     )
     wood_output_profile: bpy.props.EnumProperty(
         name="Wood Output",
@@ -145,7 +152,8 @@ class QuickGenerateTree(bpy.types.Operator):
             start_time = time.time()
 
             cpp_mesh = self._generate_tree(seed)
-            self._create_blender_object(context, cpp_mesh, f"Tree_{seed}")
+            tree_object = self._create_blender_object(context, cpp_mesh, f"Tree_{seed}")
+            organize_tree_object(tree_object, generation_seed=seed)
 
             if self.add_leaves:
                 active_obj = context.view_layer.objects.active
@@ -197,7 +205,7 @@ class QuickGenerateTree(bpy.types.Operator):
         mesher.minimum_branch_radius_ratio = settings.minimum_branch_radius_ratio
         return mesher.mesh_tree(tree)
 
-    def _create_blender_object(self, context, cpp_mesh, name: str) -> None:
+    def _create_blender_object(self, context, cpp_mesh, name: str):
         """Create Blender mesh object from C++ mesh data."""
         mesh = bpy.data.meshes.new(name)
         obj = bpy.data.objects.new(name, mesh)
@@ -206,6 +214,7 @@ class QuickGenerateTree(bpy.types.Operator):
         obj.select_set(True)
 
         create_mesh_from_cpp(mesh, cpp_mesh)
+        return obj
 
     def _create_leaf_for_preset(self, seed: int):
         """Create a unique procedural leaf matching the tree preset."""
@@ -311,7 +320,48 @@ class ExportPivotPainter(bpy.types.Operator):
         layout.prop(self, "export_format")
         if self.export_format != "UNITY":
             layout.prop(self, "texture_size")
-            layout.prop(self, "export_path")
+        layout.prop(self, "export_path")
+
+
+class CreateCanopyLobes(bpy.types.Operator):
+    """Create the editable low-poly canopy lobe template library."""
+
+    bl_idname = "mtree.create_canopy_lobes"
+    bl_label = "Create Canopy Lobes"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        try:
+            templates, created = ensure_canopy_templates()
+            self.report(
+                {"INFO"},
+                f"Canopy library ready; created {created}, preserved {len(templates) - created}",
+            )
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Failed to create canopy lobes: {exc}")
+            return {"CANCELLED"}
+
+
+class RefreshCanopyLobes(bpy.types.Operator):
+    """Generate or refresh the active tree's deterministic canopy lobes."""
+
+    bl_idname = "mtree.refresh_canopy_lobes"
+    bl_label = "Generate / Refresh Lobes"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+
+    def execute(self, context):
+        try:
+            foliage, count = refresh_canopy_for_object(context.active_object)
+            self.report({"INFO"}, f"Generated {count} canopy lobes in {foliage.name}")
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Failed to refresh canopy lobes: {exc}")
+            return {"CANCELLED"}
 
 
 class GenerateLeaf(bpy.types.Operator):
@@ -430,6 +480,8 @@ _classes = [
     ExecuteNodeFunction,
     AddLeavesModifier,
     QuickGenerateTree,
+    CreateCanopyLobes,
+    RefreshCanopyLobes,
     ExportPivotPainter,
     GenerateLeaf,
     ApplyLeafPreset,

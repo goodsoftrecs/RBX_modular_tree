@@ -1,7 +1,8 @@
-from . import nodes, operators, panels, viewport
+from . import canopy_lobes, nodes, operators, panels, viewport
 
 
 def register():
+    canopy_lobes.register_properties()
     operators.register()
     nodes.register()
     panels.register()
@@ -13,3 +14,4 @@ def unregister():
     operators.unregister()
     nodes.unregister()
     panels.unregister()
+    canopy_lobes.unregister_properties()

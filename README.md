@@ -28,6 +28,8 @@ upstream authoring output remains available; RBX-specific output is an explicit 
   preserving forks, branch attachment points, and tips
 - **Aggressive ~3K-triangle wood profile** - Removes deeper and very thin twig families before
   their junctions are meshed; representative Oak seeds generate near the target triangle count
+- **Low-poly canopy lobes** - Builds deterministic editable crown volumes from retained branch
+  tips and combines them into one refreshable foliage mesh
 
 ## Requirements
 
@@ -55,6 +57,24 @@ https://extensions.blender.org/add-ons/modular-tree/
 2. Select the **MTree** tab
 3. Click **Generate Tree** and choose a preset (Oak, Pine, Willow, or Random)
 4. Set **Wood Output** to **Roblox Game (Low Detail)** for optimized wood topology
+
+### Canopy Lobes
+
+1. Generate a tree with **Add Legacy Leaves** disabled (the default).
+2. Click **Create Canopy Lobes** once to create the editable `Canopy_Round`, `Canopy_Wide`, and
+   `Canopy_Tip` templates in `MTree_CanopyLibrary`.
+3. Select the generated tree's wood object.
+4. Adjust **Lobe Count**, **Lobe Scale**, or **Canopy Seed** in the MTree sidebar.
+5. Click **Generate / Refresh Lobes**.
+
+Refresh replaces only the selected tree's combined foliage mesh. It preserves the wood, canopy
+settings, arrangement seed, and editable templates. Selecting the generated foliage object also
+resolves back to the same owning tree. New canopy seeds default to the tree-generation seed, and
+legacy objects named `Tree_<number>` are organized and adopt that number on first refresh.
+
+The current canopy material is an opaque green preview. The lobe meshes are UV-mapped for a later
+RGBA cutout foliage texture; the final perforated texture and Roblox `SurfaceAppearance` setup are
+not part of this implementation slice.
 
 ### Node Editor (Full Control)
 1. Open a **Node Editor** and select **Mtree** from the tree type dropdown
