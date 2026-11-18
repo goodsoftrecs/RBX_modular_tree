@@ -179,12 +179,25 @@ IndexRange get_branch_indices_on_circle(const int radial_n_points, const float c
 	return IndexRange{min_index, max_index};
 }
 
-std::vector<IndexRange> get_children_ranges(const Node& node, const int radial_n_points)
+bool should_mesh_side_branch(const NodeChild& child, const int child_depth,
+                             const int max_branch_depth, const float minimum_branch_radius)
+{
+	if (max_branch_depth >= 0 && child_depth > max_branch_depth)
+		return false;
+	return child.node.radius >= minimum_branch_radius;
+}
+
+std::vector<IndexRange> get_children_ranges(const Node& node, const int radial_n_points,
+                                            const int child_depth, const int max_branch_depth,
+                                            const float minimum_branch_radius)
 {
 	std::vector<IndexRange> ranges;
 	for (size_t i = 1; i < node.children.size(); i++)
 	{
 		auto& child = node.children[i];
+		if (!should_mesh_side_branch(*child, child_depth, max_branch_depth,
+		                             minimum_branch_radius))
+			continue;
 		float angle = get_branch_angle_around_parent(node, child->node);
 		IndexRange range =
 		    get_branch_indices_on_circle(radial_n_points, node.radius, child->node.radius, angle);
@@ -384,9 +397,22 @@ bool has_side_branches(const Node& node)
 void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleDesignator& base,
                    Mesh& mesh, const float uv_y, const PivotPainterContext& pp_ctx,
                    int& stem_id_counter, int section_index, const int longitudinal_stride,
-                   int sections_since_ring)
+                   int sections_since_ring, const int max_branch_depth,
+                   const float minimum_branch_radius)
 {
-	if (node.children.size() < 2)
+	const int child_depth = pp_ctx.hierarchy_depth + 1;
+	bool has_meshable_side_branch = false;
+	for (size_t i = 1; i < node.children.size(); i++)
+	{
+		if (should_mesh_side_branch(*node.children[i], child_depth, max_branch_depth,
+		                            minimum_branch_radius))
+		{
+			has_meshable_side_branch = true;
+			break;
+		}
+	}
+
+	if (!has_meshable_side_branch)
 	{
 		float uv_growth = node.length / (node.radius + .001f) / (2 * M_PI);
 		Vector3 child_pos = NodeUtilities::get_position_in_node(node_position, node, 1);
@@ -397,7 +423,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 		{
 			mesh_node_rec(node.children[0]->node, child_pos, base, mesh, uv_y + uv_growth, pp_ctx,
 			              stem_id_counter, section_index + 1, longitudinal_stride,
-			              sections_since_ring + 1);
+			              sections_since_ring + 1, max_branch_depth, minimum_branch_radius);
 			return;
 		}
 
@@ -408,7 +434,8 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 		if (!node.is_leaf())
 		{
 			mesh_node_rec(node.children[0]->node, child_pos, child_circle, mesh, uv_y + uv_growth,
-			              pp_ctx, stem_id_counter, section_index + 1, longitudinal_stride, 0);
+			              pp_ctx, stem_id_counter, section_index + 1, longitudinal_stride, 0,
+			              max_branch_depth, minimum_branch_radius);
 		}
 	}
 	else
@@ -425,8 +452,10 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 		auto end_circle = add_circle(node_position, node, 1, junction_base.radial_n, mesh,
 		                             uv_y + uv_growth, pp_ctx, section_index);
 		std::vector<IndexRange> children_ranges =
-		    get_children_ranges(node, junction_base.radial_n);
+		    get_children_ranges(node, junction_base.radial_n, child_depth, max_branch_depth,
+		                        minimum_branch_radius);
 		bridge_circles(junction_base, end_circle, junction_base.radial_n, mesh, &children_ranges);
+		size_t child_range_index = 0;
 		for (int i = 0; i < node.children.size(); i++)
 		{
 			if (i == 0) // first child is the continuity of the branch
@@ -436,12 +465,16 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 				{
 					mesh_node_rec(node.children[0]->node, child_pos, end_circle, mesh,
 					              uv_y + uv_growth, pp_ctx, stem_id_counter, section_index + 1,
-					              longitudinal_stride, 0);
+					              longitudinal_stride, 0, max_branch_depth,
+					              minimum_branch_radius);
 				}
 			}
 			else
 			{
 				auto& child = *node.children[i];
+				if (!should_mesh_side_branch(child, child_depth, max_branch_depth,
+				                             minimum_branch_radius))
+					continue;
 				Vector3 child_pos = get_side_child_position(node, child, node_position);
 
 				// Create new context for side branch with incremented stem_id and depth
@@ -453,10 +486,12 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 
 				auto child_base =
 				    add_child_circle(node, child, child_pos, node_position, junction_base,
-				                     children_ranges[i - 1], uv_y, mesh, child_pp_ctx);
+				                     children_ranges[child_range_index], uv_y, mesh, child_pp_ctx);
+				child_range_index++;
 				// Side branches start with section_index=1 (0 was the base from add_child_circle)
 				mesh_node_rec(node.children[i]->node, child_pos, child_base, mesh, uv_y + uv_growth,
-				              child_pp_ctx, stem_id_counter, 1, longitudinal_stride, 0);
+				              child_pp_ctx, stem_id_counter, 1, longitudinal_stride, 0,
+				              max_branch_depth, minimum_branch_radius);
 			}
 		}
 	}
@@ -499,7 +534,8 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 		                              radial_resolution};
 		add_circle(stem.position, stem.node, 0, radial_resolution, mesh, 0, pp_ctx, 0);
 		mesh_node_rec(stem.node, stem.position, start_circle, mesh, 0, pp_ctx, stem_id_counter, 1,
-		              std::max(1, longitudinal_stride), 0);
+		              std::max(1, longitudinal_stride), 0, max_branch_depth,
+		              std::max(0.f, minimum_branch_radius_ratio) * stem.node.radius);
 	}
 	if (smooth_iterations > 0)
 		MeshProcessing::Smoothing::smooth_mesh(mesh, smooth_iterations, 1, &smooth_attr.data);

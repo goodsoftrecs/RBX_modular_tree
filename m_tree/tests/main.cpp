@@ -95,6 +95,38 @@ TEST(manifold_longitudinal_stride_reduces_geometry)
 	ASSERT_TRUE(game_mesh.polygons.size() < authoring_mesh.polygons.size());
 }
 
+TEST(manifold_branch_depth_pruning_reduces_geometry)
+{
+	auto trunk = std::make_shared<TrunkFunction>();
+	auto branches = std::make_shared<BranchFunction>();
+	auto sub_branches = std::make_shared<BranchFunction>();
+	branches->add_child(sub_branches);
+	trunk->add_child(branches);
+	Tree tree(trunk);
+	tree.execute_functions();
+
+	ManifoldMesher full_mesher;
+	full_mesher.radial_resolution = 8;
+	Mesh full_mesh = full_mesher.mesh_tree(tree);
+
+	ManifoldMesher pruned_mesher;
+	pruned_mesher.radial_resolution = 8;
+	pruned_mesher.max_branch_depth = 1;
+	Mesh pruned_mesh = pruned_mesher.mesh_tree(tree);
+
+	ASSERT_GT(static_cast<int>(pruned_mesh.polygons.size()), 0);
+	ASSERT_TRUE(pruned_mesh.vertices.size() < full_mesh.vertices.size());
+	ASSERT_TRUE(pruned_mesh.polygons.size() < full_mesh.polygons.size());
+	for (const auto& polygon : pruned_mesh.polygons)
+	{
+		for (int vertex_index : polygon)
+		{
+			ASSERT_GE(vertex_index, 0);
+			ASSERT_TRUE(vertex_index < static_cast<int>(pruned_mesh.vertices.size()));
+		}
+	}
+}
+
 // =====================================================================
 // LeafShapeGenerator tests
 // =====================================================================

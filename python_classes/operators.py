@@ -193,6 +193,8 @@ class QuickGenerateTree(bpy.types.Operator):
         mesher.radial_n_points = settings.radial_resolution
         mesher.smooth_iterations = settings.smooth_iterations
         mesher.longitudinal_stride = settings.longitudinal_stride
+        mesher.max_branch_depth = settings.max_branch_depth
+        mesher.minimum_branch_radius_ratio = settings.minimum_branch_radius_ratio
         return mesher.mesh_tree(tree)
 
     def _create_blender_object(self, context, cpp_mesh, name: str) -> None:

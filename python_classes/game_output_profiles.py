@@ -11,10 +11,13 @@ class WoodMesherSettings(NamedTuple):
     radial_resolution: int
     smooth_iterations: int
     longitudinal_stride: int
+    max_branch_depth: int
+    minimum_branch_radius_ratio: float
 
 
 AUTHORING = "AUTHORING"
 ROBLOX_GAME = "ROBLOX_GAME"
+ROBLOX_GAME_BUDGET = "ROBLOX_GAME_BUDGET"
 
 WOOD_OUTPUT_PROFILE_ITEMS = (
     (
@@ -27,12 +30,27 @@ WOOD_OUTPUT_PROFILE_ITEMS = (
         "Roblox Game (Low Detail)",
         "Generate lower-topology wood using 8-sided rings and one smoothing pass",
     ),
+    (
+        ROBLOX_GAME_BUDGET,
+        "Roblox Game (3-5K Wood)",
+        "Preserve major structure while pruning small and deep branch families",
+    ),
 )
 
 ROBLOX_GAME_SETTINGS = WoodMesherSettings(
     radial_resolution=8,
     smooth_iterations=1,
     longitudinal_stride=4,
+    max_branch_depth=-1,
+    minimum_branch_radius_ratio=0.0,
+)
+
+ROBLOX_GAME_BUDGET_SETTINGS = WoodMesherSettings(
+    radial_resolution=8,
+    smooth_iterations=1,
+    longitudinal_stride=6,
+    max_branch_depth=3,
+    minimum_branch_radius_ratio=0.0,
 )
 
 
@@ -45,9 +63,13 @@ def resolve_wood_mesher_settings(
 
     if profile == ROBLOX_GAME:
         return ROBLOX_GAME_SETTINGS
+    if profile == ROBLOX_GAME_BUDGET:
+        return ROBLOX_GAME_BUDGET_SETTINGS
 
     return WoodMesherSettings(
         radial_resolution=max(3, int(authoring_radial_resolution)),
         smooth_iterations=max(0, int(authoring_smooth_iterations)),
         longitudinal_stride=1,
+        max_branch_depth=-1,
+        minimum_branch_radius_ratio=0.0,
     )

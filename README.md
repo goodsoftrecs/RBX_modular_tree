@@ -26,6 +26,8 @@ upstream authoring output remains available; RBX-specific output is an explicit 
 - **Non-destructive** - Adjust parameters and regenerate anytime
 - **Roblox Game wood profile** - Lowers radial and lengthwise trunk/branch topology while
   preserving forks, branch attachment points, and tips
+- **Aggressive 3–5K wood profile** - Removes deeper twig families before their junctions are
+  meshed; the reference Oak generates at approximately 3,900 polygons
 
 ## Requirements
 
@@ -65,6 +67,11 @@ https://extensions.blender.org/add-ons/modular-tree/
 The original **Authoring** wood profile remains the default. The current Roblox Game profile
 uses 8-sided rings, one smoothing pass, and junction-safe lengthwise ring thinning. Leaf
 optimization is intentionally separate and is not part of this first wood pass.
+
+For a more aggressive result, select **Roblox Game (3-5K Wood)**. It preserves the trunk and
+three branch generations, then omits deeper split/twig families before mesh construction. The
+3–5K label is the target for the reference Oak; exact counts vary with species and generator
+settings, so inspect Blender's polygon count before export.
 
 **Tip:** Select a Branch node and press `N` to see organized parameter sections with descriptions, plus **preset buttons** (Oak, Pine, Willow, Random) to quickly configure branch characteristics.
 

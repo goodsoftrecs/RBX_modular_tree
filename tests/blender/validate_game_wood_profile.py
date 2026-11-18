@@ -30,29 +30,39 @@ try:
         f"{repo_root.name}.python_classes.game_output_profiles"
     )
 
-    def generate(profile: str):
-        settings = SimpleNamespace(preset="OAK", wood_output_profile=profile)
+    def generate(profile: str, preset: str = "OAK"):
+        settings = SimpleNamespace(preset=preset, wood_output_profile=profile)
         return operators.QuickGenerateTree._generate_tree(settings, 1234)
+
+    def mesh_counts(mesh):
+        return (len(mesh.get_vertices()) // 3, len(mesh.get_polygons()) // 4)
 
     authoring_mesh = generate(profiles.AUTHORING)
     game_mesh = generate(profiles.ROBLOX_GAME)
+    budget_mesh = generate(profiles.ROBLOX_GAME_BUDGET)
 
-    authoring_counts = (
-        len(authoring_mesh.get_vertices()) // 3,
-        len(authoring_mesh.get_polygons()) // 4,
-    )
-    game_counts = (
-        len(game_mesh.get_vertices()) // 3,
-        len(game_mesh.get_polygons()) // 4,
-    )
+    authoring_counts = mesh_counts(authoring_mesh)
+    game_counts = mesh_counts(game_mesh)
+    budget_counts = mesh_counts(budget_mesh)
     polygon_ratio = game_counts[1] / authoring_counts[1]
 
     print(f"AUTHORING wood: vertices={authoring_counts[0]} polygons={authoring_counts[1]}")
     print(f"ROBLOX_GAME wood: vertices={game_counts[0]} polygons={game_counts[1]}")
     print(f"ROBLOX_GAME polygon ratio: {polygon_ratio:.3f}")
+    print(f"ROBLOX_GAME_BUDGET wood: vertices={budget_counts[0]} polygons={budget_counts[1]}")
 
     assert game_counts[0] < authoring_counts[0]
     assert game_counts[1] < authoring_counts[1]
     assert polygon_ratio <= 0.50
+    assert 3000 <= budget_counts[1] <= 5000
+
+    for preset in ("PINE", "WILLOW"):
+        preset_authoring_counts = mesh_counts(generate(profiles.AUTHORING, preset))
+        preset_budget_counts = mesh_counts(generate(profiles.ROBLOX_GAME_BUDGET, preset))
+        print(
+            f"{preset} budget wood: vertices={preset_budget_counts[0]} "
+            f"polygons={preset_budget_counts[1]}"
+        )
+        assert 0 < preset_budget_counts[1] < preset_authoring_counts[1]
 finally:
     addon.unregister()

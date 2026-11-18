@@ -94,7 +94,19 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
             container.prop(self, "radial_resolution")
             container.prop(self, "smoothness")
         else:
-            container.label(text="8-sided rings / 4x lengthwise thinning")
+            settings = resolve_wood_mesher_settings(
+                self.wood_output_profile,
+                self.radial_resolution,
+                self.smoothness,
+            )
+            container.label(
+                text=(
+                    f"{settings.radial_resolution}-sided rings / "
+                    f"{settings.longitudinal_stride}x lengthwise thinning"
+                )
+            )
+            if settings.max_branch_depth >= 0:
+                container.label(text=f"Maximum branch depth: {settings.max_branch_depth}")
 
     def _draw_leaves_button(self, container):
         if self._has_valid_tree_object():
@@ -149,6 +161,8 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
         mesher.radial_n_points = settings.radial_resolution
         mesher.smooth_iterations = settings.smooth_iterations
         mesher.longitudinal_stride = settings.longitudinal_stride
+        mesher.max_branch_depth = settings.max_branch_depth
+        mesher.minimum_branch_radius_ratio = settings.minimum_branch_radius_ratio
         return mesher.mesh_tree(tree)
 
     def get_current_tree_object(self):
