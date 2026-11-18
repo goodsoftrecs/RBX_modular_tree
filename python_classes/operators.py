@@ -10,6 +10,11 @@ from bpy.utils import register_class, unregister_class
 
 from .m_tree_wrapper import lazy_m_tree as m_tree
 from .mesh_utils import create_mesh_from_cpp
+from .game_output_profiles import (
+    AUTHORING,
+    WOOD_OUTPUT_PROFILE_ITEMS,
+    resolve_wood_mesher_settings,
+)
 from .pivot_painter import ExportFormat, PivotPainterExporter
 from .presets import (
     TREE_PRESETS,
@@ -120,6 +125,12 @@ class QuickGenerateTree(bpy.types.Operator):
     add_leaves: bpy.props.BoolProperty(
         name="Add Leaves", default=True, description="Automatically add leaf distribution"
     )
+    wood_output_profile: bpy.props.EnumProperty(
+        name="Wood Output",
+        description="Choose original authoring topology or optimized game topology",
+        items=WOOD_OUTPUT_PROFILE_ITEMS,
+        default=AUTHORING,
+    )
 
     # Maps tree presets to matching leaf presets
     _TREE_TO_LEAF_PRESET = {
@@ -178,8 +189,10 @@ class QuickGenerateTree(bpy.types.Operator):
         tree.execute_functions()
 
         mesher = m_tree.ManifoldMesher()
-        mesher.radial_n_points = 32
-        mesher.smooth_iterations = 4
+        settings = resolve_wood_mesher_settings(self.wood_output_profile, 32, 4)
+        mesher.radial_n_points = settings.radial_resolution
+        mesher.smooth_iterations = settings.smooth_iterations
+        mesher.longitudinal_stride = settings.longitudinal_stride
         return mesher.mesh_tree(tree)
 
     def _create_blender_object(self, context, cpp_mesh, name: str) -> None:
@@ -230,6 +243,7 @@ class QuickGenerateTree(bpy.types.Operator):
         layout = self.layout
         layout.prop(self, "preset")
         layout.prop(self, "seed")
+        layout.prop(self, "wood_output_profile")
         layout.prop(self, "add_leaves")
 
 

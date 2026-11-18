@@ -72,6 +72,29 @@ TEST(tree_basic)
 	ASSERT_TRUE(true);
 }
 
+TEST(manifold_longitudinal_stride_reduces_geometry)
+{
+	auto trunk = std::make_shared<TrunkFunction>();
+	trunk->length = 12;
+	trunk->resolution = 4;
+	Tree tree(trunk);
+	tree.execute_functions();
+
+	ManifoldMesher authoring_mesher;
+	authoring_mesher.radial_resolution = 8;
+	authoring_mesher.longitudinal_stride = 1;
+	Mesh authoring_mesh = authoring_mesher.mesh_tree(tree);
+
+	ManifoldMesher game_mesher;
+	game_mesher.radial_resolution = 8;
+	game_mesher.longitudinal_stride = 3;
+	Mesh game_mesh = game_mesher.mesh_tree(tree);
+
+	ASSERT_GT(static_cast<int>(game_mesh.polygons.size()), 0);
+	ASSERT_TRUE(game_mesh.vertices.size() < authoring_mesh.vertices.size());
+	ASSERT_TRUE(game_mesh.polygons.size() < authoring_mesh.polygons.size());
+}
+
 // =====================================================================
 // LeafShapeGenerator tests
 // =====================================================================

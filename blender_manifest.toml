@@ -1,11 +1,11 @@
 schema_version = "1.0.0"
 
-id = "modular_tree"
-name = "Modular Tree"
-version = "5.5.1"
-website = "https://github.com/GoodPie/modular_tree"
-tagline = "Procedural node based 3D tree generation"
-maintainer = "GoodPie <brandynbb96@gmail.com>"
+id = "rbx_modular_tree"
+name = "RBX Modular Tree"
+version = "5.5.2"
+website = "https://github.com/goodsoftrecs/RBX_modular_tree"
+tagline = "Procedural tree generation with low-detail game output"
+maintainer = "goodsoftrecs"
 type = "add-on"
 blender_version_min = "4.3.0"
 license = ["SPDX:GPL-3.0-or-later"]

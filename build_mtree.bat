@@ -18,6 +18,6 @@ rmdir /s /q tmp 2>nul
 py -3.11 .github/scripts/setup_addon.py
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-echo Addon ready: tmp\modular_tree_*.zip
+echo Addon ready: tmp\rbx_modular_tree_*.zip
 
 PAUSE

@@ -361,6 +361,7 @@ PYBIND11_MODULE(m_tree, m) {
         .def(py::init<>())
         .def_readwrite("radial_n_points", &ManifoldMesher::radial_resolution)
         .def_readwrite("smooth_iterations", &ManifoldMesher::smooth_iterations)
+        .def_readwrite("longitudinal_stride", &ManifoldMesher::longitudinal_stride)
         .def("mesh_tree", &ManifoldMesher::mesh_tree);
 
 

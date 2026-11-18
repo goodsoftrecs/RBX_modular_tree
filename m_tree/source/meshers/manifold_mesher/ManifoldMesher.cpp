@@ -383,29 +383,50 @@ bool has_side_branches(const Node& node)
 
 void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleDesignator& base,
                    Mesh& mesh, const float uv_y, const PivotPainterContext& pp_ctx,
-                   int& stem_id_counter, int section_index)
+                   int& stem_id_counter, int section_index, const int longitudinal_stride,
+                   int sections_since_ring)
 {
 	if (node.children.size() < 2)
 	{
 		float uv_growth = node.length / (node.radius + .001f) / (2 * M_PI);
+		Vector3 child_pos = NodeUtilities::get_position_in_node(node_position, node, 1);
+		bool must_emit_ring =
+		    node.is_leaf() || sections_since_ring >= longitudinal_stride - 1;
+
+		if (!must_emit_ring)
+		{
+			mesh_node_rec(node.children[0]->node, child_pos, base, mesh, uv_y + uv_growth, pp_ctx,
+			              stem_id_counter, section_index + 1, longitudinal_stride,
+			              sections_since_ring + 1);
+			return;
+		}
+
 		auto child_circle = add_circle(node_position, node, 1, base.radial_n, mesh,
 		                               uv_y + uv_growth, pp_ctx, section_index);
 		bridge_circles(base, child_circle, base.radial_n, mesh);
-		Vector3 child_pos = NodeUtilities::get_position_in_node(node_position, node, 1);
 
 		if (!node.is_leaf())
 		{
 			mesh_node_rec(node.children[0]->node, child_pos, child_circle, mesh, uv_y + uv_growth,
-			              pp_ctx, stem_id_counter, section_index + 1);
+			              pp_ctx, stem_id_counter, section_index + 1, longitudinal_stride, 0);
 		}
 	}
 	else
 	{
 		float uv_growth = node.length / (node.radius + .001f) / (2 * M_PI);
-		auto end_circle = add_circle(node_position, node, 1, base.radial_n, mesh, uv_y + uv_growth,
-		                             pp_ctx, section_index);
-		std::vector<IndexRange> children_ranges = get_children_ranges(node, base.radial_n);
-		bridge_circles(base, end_circle, base.radial_n, mesh, &children_ranges);
+		CircleDesignator junction_base = base;
+		if (sections_since_ring > 0)
+		{
+			junction_base = add_circle(node_position, node, 0, base.radial_n, mesh, uv_y, pp_ctx,
+			                           section_index);
+			bridge_circles(base, junction_base, base.radial_n, mesh);
+		}
+
+		auto end_circle = add_circle(node_position, node, 1, junction_base.radial_n, mesh,
+		                             uv_y + uv_growth, pp_ctx, section_index);
+		std::vector<IndexRange> children_ranges =
+		    get_children_ranges(node, junction_base.radial_n);
+		bridge_circles(junction_base, end_circle, junction_base.radial_n, mesh, &children_ranges);
 		for (int i = 0; i < node.children.size(); i++)
 		{
 			if (i == 0) // first child is the continuity of the branch
@@ -414,7 +435,8 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 				if (node.children.size() > 0)
 				{
 					mesh_node_rec(node.children[0]->node, child_pos, end_circle, mesh,
-					              uv_y + uv_growth, pp_ctx, stem_id_counter, section_index + 1);
+					              uv_y + uv_growth, pp_ctx, stem_id_counter, section_index + 1,
+					              longitudinal_stride, 0);
 				}
 			}
 			else
@@ -430,11 +452,11 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 				child_pp_ctx.branch_extent = calculate_branch_extent(child.node);
 
 				auto child_base =
-				    add_child_circle(node, child, child_pos, node_position, base,
+				    add_child_circle(node, child, child_pos, node_position, junction_base,
 				                     children_ranges[i - 1], uv_y, mesh, child_pp_ctx);
 				// Side branches start with section_index=1 (0 was the base from add_child_circle)
 				mesh_node_rec(node.children[i]->node, child_pos, child_base, mesh, uv_y + uv_growth,
-				              child_pp_ctx, stem_id_counter, 1);
+				              child_pp_ctx, stem_id_counter, 1, longitudinal_stride, 0);
 			}
 		}
 	}
@@ -476,7 +498,8 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 		CircleDesignator start_circle{(int)mesh.vertices.size(), (int)mesh.uvs.size(),
 		                              radial_resolution};
 		add_circle(stem.position, stem.node, 0, radial_resolution, mesh, 0, pp_ctx, 0);
-		mesh_node_rec(stem.node, stem.position, start_circle, mesh, 0, pp_ctx, stem_id_counter, 1);
+		mesh_node_rec(stem.node, stem.position, start_circle, mesh, 0, pp_ctx, stem_id_counter, 1,
+		              std::max(1, longitudinal_stride), 0);
 	}
 	if (smooth_iterations > 0)
 		MeshProcessing::Smoothing::smooth_mesh(mesh, smooth_iterations, 1, &smooth_attr.data);

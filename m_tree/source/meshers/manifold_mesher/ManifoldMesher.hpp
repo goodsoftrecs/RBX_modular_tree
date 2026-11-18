@@ -29,6 +29,7 @@ class ManifoldMesher : public TreeMesher
 
 	int radial_resolution = 8;
 	int smooth_iterations = 4;
+	int longitudinal_stride = 1;
 	Mesh mesh_tree(Tree& tree) override;
 };
 

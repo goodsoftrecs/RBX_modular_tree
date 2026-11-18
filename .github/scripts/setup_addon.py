@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 TMP_DIRPATH = r"./tmp"
+ADDON_ID = "rbx_modular_tree"
 ADDON_SOURCE_DIRNAME = "python_classes"
 RESOURCES_DIRNAME = "resources"
 VERSION_FILEPATH = os.path.join(Path(__file__).parent.parent.parent, "VERSION")
@@ -65,8 +66,10 @@ def update_manifest_wheels(manifest_path, wheel_files):
 def setup_addon_directory():
     sync_all_versions()
     version = read_version()
-    addon_dirpath = os.path.join(TMP_DIRPATH, f"modular_tree_{version}")
-    root = os.path.join(addon_dirpath, "modular_tree")
+    addon_dirpath = os.path.join(TMP_DIRPATH, f"{ADDON_ID}_{version}")
+    if os.path.isdir(addon_dirpath):
+        shutil.rmtree(addon_dirpath)
+    root = os.path.join(addon_dirpath, ADDON_ID)
     wheels_dir = os.path.join(root, "wheels")
     Path(wheels_dir).mkdir(exist_ok=True, parents=True)
 
@@ -106,7 +109,7 @@ def create_zip(input_dir, output_dir):
 
 def get_addon_root(addon_dirpath):
     """Return the inner addon root directory path."""
-    return os.path.join(addon_dirpath, "modular_tree")
+    return os.path.join(addon_dirpath, ADDON_ID)
 
 
 def list_files(root_directory):

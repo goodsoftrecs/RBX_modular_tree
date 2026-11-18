@@ -8,6 +8,11 @@ import bpy
 
 from ...m_tree_wrapper import lazy_m_tree as m_tree
 from ...mesh_utils import create_mesh_from_cpp
+from ...game_output_profiles import (
+    AUTHORING,
+    WOOD_OUTPUT_PROFILE_ITEMS,
+    resolve_wood_mesher_settings,
+)
 from ..base_types.node import MtreeNode
 from ..debounce import schedule_build
 
@@ -26,6 +31,13 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
         name="Auto Update",
         description="Automatically rebuild tree when parameters or connections change",
         default=True,
+    )
+    wood_output_profile: bpy.props.EnumProperty(
+        name="Wood Output",
+        description="Choose original authoring topology or optimized game topology",
+        items=WOOD_OUTPUT_PROFILE_ITEMS,
+        default=AUTHORING,
+        update=on_update_prop,
     )
     radial_resolution: bpy.props.IntProperty(
         name="Radial Resolution", default=32, min=3, update=on_update_prop
@@ -77,8 +89,12 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
 
     def _draw_properties(self, container):
         container.prop(self, "auto_update")
-        container.prop(self, "radial_resolution")
-        container.prop(self, "smoothness")
+        container.prop(self, "wood_output_profile")
+        if self.wood_output_profile == AUTHORING:
+            container.prop(self, "radial_resolution")
+            container.prop(self, "smoothness")
+        else:
+            container.label(text="8-sided rings / 4x lengthwise thinning")
 
     def _draw_leaves_button(self, container):
         if self._has_valid_tree_object():
@@ -124,9 +140,15 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
 
     def _mesh_tree(self, tree):
         """Convert tree structure to mesh using ManifoldMesher."""
+        settings = resolve_wood_mesher_settings(
+            self.wood_output_profile,
+            self.radial_resolution,
+            self.smoothness,
+        )
         mesher = m_tree.ManifoldMesher()
-        mesher.radial_n_points = self.radial_resolution
-        mesher.smooth_iterations = self.smoothness
+        mesher.radial_n_points = settings.radial_resolution
+        mesher.smooth_iterations = settings.smooth_iterations
+        mesher.longitudinal_stride = settings.longitudinal_stride
         return mesher.mesh_tree(tree)
 
     def get_current_tree_object(self):

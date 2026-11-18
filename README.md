@@ -1,10 +1,14 @@
-# Mtree
+# RBX Modular Tree
 
 [![Build and Release](https://github.com/GoodPie/modular_tree/actions/workflows/CD.yml/badge.svg)](https://github.com/GoodPie/modular_tree/actions/workflows/CD.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-A procedural tree generator addon for Blender using a node-based workflow.
+A Blender tree-authoring fork focused on producing practical game-ready geometry for the RBX
+world-authoring pipeline.
+
+This fork is based on [GoodPie's Modular Tree](https://github.com/GoodPie/modular_tree). The
+upstream authoring output remains available; RBX-specific output is an explicit opt-in profile.
 
 > **Note:** This is a maintained fork of [Mtree by MaximeHerpin](https://github.com/MaximeHerpin/modular_tree). Some features are no longer best practice and work is being done to implement these properly
 
@@ -20,6 +24,8 @@ A procedural tree generator addon for Blender using a node-based workflow.
 - **Leaf distribution** - Automatic leaf placement on thin branches via geometry nodes
 - **Pivot Painter 2.0 export** - Export wind animation data for Unreal Engine 5
 - **Non-destructive** - Adjust parameters and regenerate anytime
+- **Roblox Game wood profile** - Lowers radial and lengthwise trunk/branch topology while
+  preserving forks, branch attachment points, and tips
 
 ## Requirements
 
@@ -35,10 +41,10 @@ https://extensions.blender.org/add-ons/modular-tree/
 
 ### Local Installation
 
-1. Download the latest release for your OS from [Releases](https://github.com/GoodPie/modular_tree/releases)
+1. Build or download the RBX fork zip (`rbx_modular_tree_*.zip`)
 2. In Blender: Edit -> Preferences -> Add-ons -> Install
 3. Select the downloaded `.zip` file
-4. Enable "Modular Tree" in the addon list
+4. Enable "RBX Modular Tree" in the addon list
 
 ## Quick Start
 
@@ -46,6 +52,7 @@ https://extensions.blender.org/add-ons/modular-tree/
 1. Open the **3D View** sidebar (press `N`)
 2. Select the **MTree** tab
 3. Click **Generate Tree** and choose a preset (Oak, Pine, Willow, or Random)
+4. Set **Wood Output** to **Roblox Game (Low Detail)** for optimized wood topology
 
 ### Node Editor (Full Control)
 1. Open a **Node Editor** and select **Mtree** from the tree type dropdown
@@ -54,6 +61,10 @@ https://extensions.blender.org/add-ons/modular-tree/
 4. Add a **Branches** node and connect Trunk's output to Branches' input
 5. Click **Generate Tree** in the Tree Mesher node
 6. (Optional) Click **Add Leaves** to distribute leaves on the tree
+
+The original **Authoring** wood profile remains the default. The current Roblox Game profile
+uses 8-sided rings, one smoothing pass, and junction-safe lengthwise ring thinning. Leaf
+optimization is intentionally separate and is not part of this first wood pass.
 
 **Tip:** Select a Branch node and press `N` to see organized parameter sections with descriptions, plus **preset buttons** (Oak, Pine, Willow, Random) to quickly configure branch characteristics.
 
