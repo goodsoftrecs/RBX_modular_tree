@@ -45,7 +45,8 @@ def test_roblox_budget_profile_prunes_small_deep_branch_families():
     settings = resolve_wood_mesher_settings(ROBLOX_GAME_BUDGET, 32, 4)
 
     assert settings == ROBLOX_GAME_BUDGET_SETTINGS
-    assert settings.radial_resolution == 8
-    assert settings.longitudinal_stride == 6
-    assert settings.max_branch_depth == 3
-    assert settings.minimum_branch_radius_ratio == 0.0
+    assert settings.radial_resolution == 6
+    assert settings.smooth_iterations == 0
+    assert settings.longitudinal_stride == 8
+    assert settings.max_branch_depth == 2
+    assert settings.minimum_branch_radius_ratio == 0.05

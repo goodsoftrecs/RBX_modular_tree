@@ -37,6 +37,13 @@ try:
     def mesh_counts(mesh):
         return (len(mesh.get_vertices()) // 3, len(mesh.get_polygons()) // 4)
 
+    def triangle_count(mesh):
+        polygons = mesh.get_polygons()
+        return sum(
+            1 if polygons[index + 2] == polygons[index + 3] else 2
+            for index in range(0, len(polygons), 4)
+        )
+
     authoring_mesh = generate(profiles.AUTHORING)
     game_mesh = generate(profiles.ROBLOX_GAME)
     budget_mesh = generate(profiles.ROBLOX_GAME_BUDGET)
@@ -49,12 +56,22 @@ try:
     print(f"AUTHORING wood: vertices={authoring_counts[0]} polygons={authoring_counts[1]}")
     print(f"ROBLOX_GAME wood: vertices={game_counts[0]} polygons={game_counts[1]}")
     print(f"ROBLOX_GAME polygon ratio: {polygon_ratio:.3f}")
-    print(f"ROBLOX_GAME_BUDGET wood: vertices={budget_counts[0]} polygons={budget_counts[1]}")
+    print(
+        f"ROBLOX_GAME_BUDGET wood: vertices={budget_counts[0]} "
+        f"polygons={budget_counts[1]} triangles={triangle_count(budget_mesh)}"
+    )
 
     assert game_counts[0] < authoring_counts[0]
     assert game_counts[1] < authoring_counts[1]
     assert polygon_ratio <= 0.50
-    assert 3000 <= budget_counts[1] <= 5000
+    for seed in (42, 1234, 6676, 9999):
+        seed_budget_mesh = operators.QuickGenerateTree._generate_tree(
+            SimpleNamespace(preset="OAK", wood_output_profile=profiles.ROBLOX_GAME_BUDGET),
+            seed,
+        )
+        seed_triangle_count = triangle_count(seed_budget_mesh)
+        print(f"OAK seed={seed} budget triangles={seed_triangle_count}")
+        assert 2500 <= seed_triangle_count <= 4000
 
     for preset in ("PINE", "WILLOW"):
         preset_authoring_counts = mesh_counts(generate(profiles.AUTHORING, preset))

@@ -32,8 +32,8 @@ WOOD_OUTPUT_PROFILE_ITEMS = (
     ),
     (
         ROBLOX_GAME_BUDGET,
-        "Roblox Game (3-5K Wood)",
-        "Preserve major structure while pruning small and deep branch families",
+        "Roblox Game (~3K Tris)",
+        "Target roughly 3,000 Blender triangles for Oak wood while preserving major branches",
     ),
 )
 
@@ -46,11 +46,11 @@ ROBLOX_GAME_SETTINGS = WoodMesherSettings(
 )
 
 ROBLOX_GAME_BUDGET_SETTINGS = WoodMesherSettings(
-    radial_resolution=8,
-    smooth_iterations=1,
-    longitudinal_stride=6,
-    max_branch_depth=3,
-    minimum_branch_radius_ratio=0.0,
+    radial_resolution=6,
+    smooth_iterations=0,
+    longitudinal_stride=8,
+    max_branch_depth=2,
+    minimum_branch_radius_ratio=0.05,
 )
 
 
