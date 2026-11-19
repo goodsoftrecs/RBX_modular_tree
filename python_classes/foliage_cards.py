@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import bpy
 from mathutils import Matrix, Vector
 
@@ -15,13 +17,19 @@ from .canopy_lobes import (
     organize_tree_object,
 )
 from .foliage_anchor_data import load_anchor_payload
-from .foliage_card_layout import CardPlacement, build_card_layout
+from .foliage_card_layout import (
+    CardPlacement,
+    build_card_layout,
+    rotate_card_layout_about_z,
+    rotate_uv_to_fit,
+)
 
 
 FOLIAGE_LIBRARY_NAME = "MTree_FoliageLibrary"
 FOLIAGE_TEMPLATE_NAME = "FoliageCard_Template"
 FOLIAGE_PREVIEW_MATERIAL_NAME = "MTree_FoliagePreview"
 ROLE_FOLIAGE_TEMPLATE = "FOLIAGE_CARD_TEMPLATE"
+GENERATED_MATERIAL_KEY = "mtree_generated_foliage_material"
 
 
 def _link_collection_to_scene(collection: bpy.types.Collection) -> None:
@@ -137,7 +145,10 @@ def _placement_matrix(placement: CardPlacement) -> Matrix:
 
 
 def _build_foliage_mesh(
-    template: bpy.types.Object, placements: list[CardPlacement]
+    template: bpy.types.Object,
+    placements: list[CardPlacement],
+    texture_rotation_radians: float = 0.0,
+    output_material: bpy.types.Material | None = None,
 ) -> bpy.types.Mesh:
     source_mesh = template.data
     source_uv = source_mesh.uv_layers.active
@@ -155,7 +166,14 @@ def _build_foliage_mesh(
         vertices.extend(tuple(transform @ vertex.co) for vertex in source_mesh.vertices)
         for polygon in source_mesh.polygons:
             faces.append(tuple(vertex_offset + index for index in polygon.vertices))
-            face_uvs.append([tuple(source_uv.data[index].uv) for index in polygon.loop_indices])
+            face_uvs.append(
+                [
+                    rotate_uv_to_fit(
+                        tuple(source_uv.data[index].uv), texture_rotation_radians
+                    )
+                    for index in polygon.loop_indices
+                ]
+            )
 
     mesh = bpy.data.meshes.new("Foliage_Cards")
     mesh.from_pydata(vertices, [], faces)
@@ -164,8 +182,43 @@ def _build_foliage_mesh(
     for polygon, uvs in zip(mesh.polygons, face_uvs, strict=True):
         for loop_index, uv in zip(polygon.loop_indices, uvs, strict=True):
             uv_layer.data[loop_index].uv = uv
-    mesh.materials.append(source_mesh.materials[0])
+    mesh.materials.append(output_material or source_mesh.materials[0])
     return mesh
+
+
+def _material_for_texture_rotation(
+    template_material: bpy.types.Material,
+    texture_rotation_radians: float,
+    tree_name: str,
+) -> bpy.types.Material | None:
+    """Create the clipped tree-owned material required by fitted rotated UVs."""
+
+    if abs(math.remainder(texture_rotation_radians, math.tau)) <= 1e-12:
+        return None
+    if not template_material.use_nodes or template_material.node_tree is None:
+        raise ValueError("Texture Rotation requires a node-based template material")
+    image_nodes = [
+        node for node in template_material.node_tree.nodes if node.type == "TEX_IMAGE"
+    ]
+    if not image_nodes:
+        return None
+
+    material = template_material.copy()
+    material.name = f"{tree_name}_FoliageMaterial"
+    material[GENERATED_MATERIAL_KEY] = True
+    for node in material.node_tree.nodes:
+        if node.type == "TEX_IMAGE":
+            node.extension = "CLIP"
+    return material
+
+
+def _remove_generated_material_if_unused(material: bpy.types.Material | None) -> None:
+    if (
+        material is not None
+        and material.get(GENERATED_MATERIAL_KEY)
+        and material.users == 0
+    ):
+        bpy.data.materials.remove(material)
 
 
 def refresh_foliage_cards_for_object(
@@ -189,11 +242,29 @@ def refresh_foliage_cards_for_object(
         cluster_count=int(wood.mtree_foliage_cluster_count),
         scale_multiplier=float(wood.mtree_foliage_card_scale),
         seed=int(wood.mtree_foliage_seed),
+        pair_rotation_radians=float(wood.mtree_foliage_pair_rotation),
     )
-    new_mesh = _build_foliage_mesh(template, placements)
+    placements = rotate_card_layout_about_z(
+        placements, float(wood.mtree_foliage_canopy_rotation)
+    )
+    texture_rotation = float(wood.mtree_foliage_texture_rotation)
+    generated_material = _material_for_texture_rotation(
+        template.data.materials[0], texture_rotation, tree_collection.name
+    )
+    try:
+        new_mesh = _build_foliage_mesh(
+            template,
+            placements,
+            texture_rotation_radians=texture_rotation,
+            output_material=generated_material,
+        )
+    except Exception:
+        _remove_generated_material_if_unused(generated_material)
+        raise
     expected_cards = int(wood.mtree_foliage_cluster_count) * 2
     if len(placements) != expected_cards or len(new_mesh.polygons) < expected_cards:
         bpy.data.meshes.remove(new_mesh)
+        _remove_generated_material_if_unused(generated_material)
         raise ValueError("Generated foliage card mesh failed validation")
 
     foliage = bpy.data.objects.new(f"{tree_collection.name}_Foliage_New", new_mesh)
@@ -205,6 +276,13 @@ def refresh_foliage_cards_for_object(
     foliage[SEED_KEY] = int(wood.mtree_foliage_seed)
     foliage["mtree_foliage_cluster_count"] = int(wood.mtree_foliage_cluster_count)
     foliage["mtree_foliage_card_count"] = len(placements)
+    foliage["mtree_foliage_texture_rotation"] = float(
+        wood.mtree_foliage_texture_rotation
+    )
+    foliage["mtree_foliage_pair_rotation"] = float(wood.mtree_foliage_pair_rotation)
+    foliage["mtree_foliage_canopy_rotation"] = float(
+        wood.mtree_foliage_canopy_rotation
+    )
 
     old_foliage = [
         obj
@@ -213,10 +291,15 @@ def refresh_foliage_cards_for_object(
     ]
     for old in old_foliage:
         old_mesh = old.data if old.type == "MESH" else None
+        old_materials = list(old_mesh.materials) if old_mesh is not None else []
         bpy.data.objects.remove(old, do_unlink=True)
         if old_mesh is not None and old_mesh.users == 0:
             bpy.data.meshes.remove(old_mesh)
+        for material in old_materials:
+            _remove_generated_material_if_unused(material)
 
+    if generated_material is not None:
+        generated_material.name = f"{tree_collection.name}_FoliageMaterial"
     foliage.name = f"{tree_collection.name}_Foliage"
     new_mesh.name = foliage.name
     return foliage, int(wood.mtree_foliage_cluster_count), len(placements)
@@ -235,7 +318,31 @@ def register_properties() -> None:
         description="Multiplier over the automatically derived foliage card size",
         default=1.0,
         min=0.1,
-        max=4.0,
+        max=12.0,
+    )
+    bpy.types.Object.mtree_foliage_texture_rotation = bpy.props.FloatProperty(
+        name="Texture Rotation",
+        description="Rotate and fit the complete foliage texture inside every card",
+        subtype="ANGLE",
+        default=0.0,
+        min=-math.tau,
+        max=math.tau,
+    )
+    bpy.types.Object.mtree_foliage_pair_rotation = bpy.props.FloatProperty(
+        name="Card Pair Rotation",
+        description="Roll each shallow-V card pair around its virtual branch direction",
+        subtype="ANGLE",
+        default=0.0,
+        min=-math.tau,
+        max=math.tau,
+    )
+    bpy.types.Object.mtree_foliage_canopy_rotation = bpy.props.FloatProperty(
+        name="Canopy Rotation",
+        description="Rotate the complete foliage canopy around the tree-local Z axis",
+        subtype="ANGLE",
+        default=0.0,
+        min=-math.tau,
+        max=math.tau,
     )
     bpy.types.Object.mtree_foliage_seed = bpy.props.IntProperty(
         name="Foliage Seed",
@@ -248,6 +355,9 @@ def register_properties() -> None:
 def unregister_properties() -> None:
     for name in (
         "mtree_foliage_seed",
+        "mtree_foliage_canopy_rotation",
+        "mtree_foliage_pair_rotation",
+        "mtree_foliage_texture_rotation",
         "mtree_foliage_card_scale",
         "mtree_foliage_cluster_count",
     ):

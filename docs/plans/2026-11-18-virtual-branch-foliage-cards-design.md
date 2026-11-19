@@ -102,9 +102,20 @@ The MTree sidebar exposes a primary `Foliage Cards` workflow:
 
 - `Create Foliage Card Template`: creates a missing template without overwriting artist edits;
 - `Foliage Cluster Count`: exact number of shallow-V pairs;
-- `Card Scale`: multiplier over automatically derived size;
+- `Card Scale`: `0.1x-12x` multiplier over automatically derived size;
+- `Texture Rotation`: rotates each card's UV island around its center and scales the rotated island
+  down just enough to keep the complete texture inside the card;
+- `Card Pair Rotation`: rolls every shallow-V pair around its virtual branch direction without
+  changing the fixed V angle;
+- `Canopy Rotation`: rotates the complete foliage placement set around the tree-local Z axis;
 - `Foliage Seed`: defaults to the tree generation seed;
 - `Generate / Refresh Foliage Cards`: safely replaces foliage for the selected tree.
+
+These appearance controls are stored per tree and applied during refresh. They operate on generated
+UVs and geometry rather than injecting Mapping nodes. A nonzero texture rotation creates one
+tree-owned copy of the template material with image extension set to `Clip`; this is required to keep
+the complete rotated image visible without Repeat wrapping. Editing the shared template object
+remains the global authoring path for changes that should affect every tree after refresh.
 
 The initial V angle is fixed near 55 degrees. It becomes a user control only if visual testing shows
 that a fixed value is insufficient.
@@ -133,11 +144,15 @@ longer the primary visible workflow.
 
 ## Validation
 
-- Identical graph, cluster count, scale, and seed produce identical anchors and card transforms.
+- Identical graph, cluster count, scale, rotations, and seed produce identical anchors, UVs, and card
+  transforms.
 - Anchors include branches omitted by the configured optimized mesher.
 - Trunk and thick interior nodes are not selected as foliage clusters.
 - Requested cluster count produces exactly twice as many cards.
 - Each pair forms the fixed shallow V and follows its branch tangent.
+- Texture rotation expands sampling UVs beyond `0-1` as needed and uses clipped image sampling so
+  the complete rotated image fits inside the card.
+- Card-pair rotation preserves the fixed V angle, and canopy rotation uses the tree-local origin.
 - Refresh replaces only the tree's foliage and preserves wood and ownership metadata.
 - Editing the template changes the next refresh.
 - Thirty clusters produce one foliage mesh, one material, 60 cards, and approximately 120 triangles.
@@ -150,4 +165,3 @@ longer the primary visible workflow.
 - Roblox-side foliage generation.
 - Generating or retaining the complete high-detail wood mesh.
 - Automatic LOD generation in the first implementation.
-

@@ -198,6 +198,41 @@ Acceptance:
 - Packaged add-on creates a tree with persistent anchors and refreshable shallow-V foliage cards.
 - `git diff --check` is clean.
 
+### 7. Add per-tree foliage appearance rotations
+
+Purpose: provide direct appearance control without shader-node authoring or per-tree material copies.
+
+Likely files:
+
+- `python_classes/foliage_card_layout.py`
+- `python_classes/foliage_cards.py`
+- `python_classes/canopy_lobes.py`
+- `python_classes/panels/__init__.py`
+- `tests/unit/test_foliage_card_layout.py`
+- `tests/blender/validate_foliage_cards.py`
+
+Work:
+
+- Raise the Card Scale upper bound from `4x` to `12x`.
+- Add per-tree texture, card-pair, and canopy rotation properties shown as degree controls.
+- Rotate UVs around their center with an inverse sampling scale that fits the complete image inside
+  the card, and use one tree-owned clipped material copy when texture rotation is nonzero.
+- Apply card-pair rotation as a roll around each selected branch direction while preserving the fixed
+  shallow-V angle.
+- Apply canopy rotation to positions, directions, and normals around the tree-local Z axis.
+- Persist the applied controls on the generated foliage object for inspection.
+
+Acceptance:
+
+- Zero rotation preserves existing deterministic output.
+- Rotated UVs and clipped sampling show the complete image without Repeat wrapping.
+- Pair rotation changes card orientation without changing anchor selection, scale, or V angle.
+- Canopy rotation changes the complete placement set around the local origin.
+- Repeated refresh with identical controls remains deterministic.
+
+Risk: rotating texture coordinates without fitting would crop or wrap texture corners; the fit factor
+is therefore part of the control contract rather than an optional shader behavior.
+
 ## Validation Summary
 
 - Native: complete graph traversal and pruning independence.
@@ -222,4 +257,3 @@ Acceptance:
 - Update `README.md` when implementation is complete.
 - The prior canopy-lobes design remains historical context and must not be rewritten as if cards were
   its original design.
-

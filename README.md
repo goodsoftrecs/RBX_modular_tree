@@ -65,7 +65,8 @@ https://extensions.blender.org/add-ons/modular-tree/
    `MTree_FoliageLibrary/FoliageCard_Template` quad.
 3. Assign your RGBA twig-and-leaf material to that template. Its UV map uses the full `0-1` range.
 4. Select the generated tree's wood object.
-5. Adjust **Foliage Cluster Count**, **Card Scale**, or **Foliage Seed** in the MTree sidebar.
+5. Adjust **Foliage Cluster Count**, **Card Scale** (up to `12x`), **Texture Rotation**,
+   **Card Pair Rotation**, **Canopy Rotation**, or **Foliage Seed** in the MTree sidebar.
 6. Click **Generate / Refresh Foliage Cards**.
 
 Each cluster contains two static cards in a fixed shallow V aligned to a branch from the complete
@@ -77,6 +78,10 @@ Refresh replaces only the selected tree's combined foliage mesh. It preserves th
 seed, and editable template, and selection may start from either wood or foliage. Trees generated
 before complete-graph anchor persistence was added must be regenerated; the add-on fails explicitly
 instead of falling back to the sparse retained wood endpoints.
+
+The three rotation controls are per tree. Texture rotation keeps the full image visible with clipped
+sampling and a fitted rotated UV square; Card Pair Rotation rolls each shallow-V pair around its
+virtual branch; Canopy Rotation turns all foliage around the tree-local vertical axis.
 
 The initial template uses one full-range texture. Atlas/texture-bible region selection, wind, and
 automatic LOD generation remain later stages and do not require changing anchor extraction.

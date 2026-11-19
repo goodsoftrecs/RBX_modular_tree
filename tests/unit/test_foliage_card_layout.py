@@ -5,7 +5,12 @@ import math
 import pytest
 
 from foliage_anchor_data import FoliageAnchor
-from foliage_card_layout import build_card_layout, eligible_anchor_indices
+from foliage_card_layout import (
+    build_card_layout,
+    eligible_anchor_indices,
+    rotate_card_layout_about_z,
+    rotate_uv_to_fit,
+)
 
 
 def _anchors():
@@ -80,8 +85,71 @@ def test_scale_multiplier_only_changes_card_scale():
         assert scaled.scale == pytest.approx(original.scale * 2.0)
 
 
+def test_texture_rotation_expands_sampling_uvs_for_clipped_fit():
+    corners = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
+
+    assert [rotate_uv_to_fit(uv, 0.0) for uv in corners] == corners
+    rotated = [rotate_uv_to_fit(uv, math.radians(45.0)) for uv in corners]
+
+    assert any(component < 0.0 for uv in rotated for component in uv)
+    assert any(component > 1.0 for uv in rotated for component in uv)
+    assert rotated != list(corners)
+
+
+def test_pair_rotation_rolls_cards_without_changing_selection_or_v_angle():
+    normal = build_card_layout(_anchors(), cluster_count=6, scale_multiplier=1.0, seed=12)
+    rolled = build_card_layout(
+        _anchors(),
+        cluster_count=6,
+        scale_multiplier=1.0,
+        seed=12,
+        pair_rotation_radians=math.radians(90.0),
+    )
+
+    for original, rotated in zip(normal, rolled, strict=True):
+        assert rotated.anchor_index == original.anchor_index
+        assert rotated.position == original.position
+        assert rotated.direction == original.direction
+        assert rotated.scale == original.scale
+        assert _dot(rotated.normal, original.normal) == pytest.approx(0.0, abs=1e-6)
+
+    for index in range(0, len(rolled), 2):
+        first, second = rolled[index : index + 2]
+        angle = math.degrees(math.acos(max(-1.0, min(1.0, _dot(first.normal, second.normal)))))
+        assert angle == pytest.approx(55.0)
+
+
+def test_canopy_rotation_moves_positions_and_axes_about_local_z():
+    layout = build_card_layout(_anchors(), cluster_count=4, scale_multiplier=1.0, seed=3)
+    rotated = rotate_card_layout_about_z(layout, math.radians(90.0))
+
+    for original, transformed in zip(layout, rotated, strict=True):
+        assert transformed.position == pytest.approx(
+            (-original.position[1], original.position[0], original.position[2])
+        )
+        assert transformed.direction == pytest.approx(
+            (-original.direction[1], original.direction[0], original.direction[2])
+        )
+        assert transformed.normal == pytest.approx(
+            (-original.normal[1], original.normal[0], original.normal[2])
+        )
+        assert transformed.scale == original.scale
+
+
 def test_invalid_layout_inputs_fail_explicitly():
     with pytest.raises(ValueError, match="count"):
         build_card_layout(_anchors(), cluster_count=0, scale_multiplier=1.0, seed=0)
     with pytest.raises(ValueError, match="scale"):
         build_card_layout(_anchors(), cluster_count=1, scale_multiplier=0.0, seed=0)
+    with pytest.raises(ValueError, match="pair rotation"):
+        build_card_layout(
+            _anchors(),
+            cluster_count=1,
+            scale_multiplier=1.0,
+            seed=0,
+            pair_rotation_radians=float("nan"),
+        )
+    with pytest.raises(ValueError, match="Texture rotation"):
+        rotate_uv_to_fit((0.0, 0.0), float("inf"))
+    with pytest.raises(ValueError, match="Canopy rotation"):
+        rotate_card_layout_about_z([], float("nan"))

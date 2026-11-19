@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 try:
     from .foliage_anchor_data import FoliageAnchor, validate_anchor
@@ -68,6 +68,48 @@ def _rotate_about_axis(
         + axis[index] * dot * (1.0 - cosine)
         for index in range(3)
     )
+
+
+def rotate_uv_to_fit(
+    uv: tuple[float, float], angle_radians: float
+) -> tuple[float, float]:
+    """Return clipped sampling UVs that rotate and fit the full texture inside the card."""
+
+    if not math.isfinite(angle_radians):
+        raise ValueError("Texture rotation must be finite")
+    sample_angle = -angle_radians
+    cosine = math.cos(sample_angle)
+    sine = math.sin(sample_angle)
+    sampling_scale = max(abs(cosine) + abs(sine), 1.0)
+    centered_u = (float(uv[0]) - 0.5) * sampling_scale
+    centered_v = (float(uv[1]) - 0.5) * sampling_scale
+    return (
+        0.5 + centered_u * cosine - centered_v * sine,
+        0.5 + centered_u * sine + centered_v * cosine,
+    )
+
+
+def rotate_card_layout_about_z(
+    placements: list[CardPlacement], angle_radians: float
+) -> list[CardPlacement]:
+    """Rotate a complete placement set around the tree-local Z axis."""
+
+    if not math.isfinite(angle_radians):
+        raise ValueError("Canopy rotation must be finite")
+    if abs(angle_radians) <= 1e-12:
+        return placements.copy()
+    axis = (0.0, 0.0, 1.0)
+    return [
+        replace(
+            placement,
+            position=_rotate_about_axis(placement.position, axis, angle_radians),
+            direction=_normalize(
+                _rotate_about_axis(placement.direction, axis, angle_radians)
+            ),
+            normal=_normalize(_rotate_about_axis(placement.normal, axis, angle_radians)),
+        )
+        for placement in placements
+    ]
 
 
 def _distance_squared(
@@ -200,6 +242,7 @@ def build_card_layout(
     scale_multiplier: float,
     seed: int,
     v_angle_degrees: float = DEFAULT_V_ANGLE_DEGREES,
+    pair_rotation_radians: float = 0.0,
 ) -> list[CardPlacement]:
     """Return exactly two branch-aligned cards for every requested cluster."""
 
@@ -211,6 +254,8 @@ def build_card_layout(
         raise ValueError("Card scale must be finite and greater than zero")
     if not math.isfinite(v_angle_degrees) or not 1.0 <= v_angle_degrees <= 179.0:
         raise ValueError("Card V angle must be between 1 and 179 degrees")
+    if not math.isfinite(pair_rotation_radians):
+        raise ValueError("Card pair rotation must be finite")
 
     validated = [validate_anchor(anchor) for anchor in anchors]
     eligible = eligible_anchor_indices(validated)
@@ -224,16 +269,19 @@ def build_card_layout(
     for cluster_index, anchor_index in enumerate(selected):
         anchor = validated[anchor_index]
         direction = _normalize(anchor.direction)
-        normal = _stable_normal(direction, rng.uniform(-math.pi, math.pi))
+        base_normal = _stable_normal(direction, rng.uniform(-math.pi, math.pi))
+        normal = _normalize(
+            _rotate_about_axis(base_normal, direction, pair_rotation_radians)
+        )
         repetition = repetitions.get(anchor_index, 0)
         repetitions[anchor_index] = repetition + 1
         jitter_scale = base_scale * 0.18 * repetition
         jitter_angle = rng.uniform(-math.pi, math.pi)
-        side = _normalize(_cross(normal, direction))
+        side = _normalize(_cross(base_normal, direction))
         position = tuple(
             anchor.position[axis]
             + side[axis] * math.cos(jitter_angle) * jitter_scale
-            + normal[axis] * math.sin(jitter_angle) * jitter_scale
+            + base_normal[axis] * math.sin(jitter_angle) * jitter_scale
             for axis in range(3)
         )
         varied_scale = base_scale * rng.uniform(0.88, 1.12)

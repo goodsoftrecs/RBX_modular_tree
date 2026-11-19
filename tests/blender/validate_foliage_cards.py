@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 import os
 import sys
 from pathlib import Path
@@ -55,6 +56,13 @@ try:
     assert wood.get("mtree_generation_seed") == 538
     assert wood.mtree_foliage_seed == 538
     assert wood.mtree_foliage_cluster_count == 30
+    assert wood.mtree_foliage_texture_rotation == 0.0
+    assert wood.mtree_foliage_pair_rotation == 0.0
+    assert wood.mtree_foliage_canopy_rotation == 0.0
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_card_scale"].hard_max
+        == 12.0
+    )
     dense_anchors = anchor_data.load_anchor_payload(wood)
     assert dense_anchors
     assert max(anchor.hierarchy_depth for anchor in dense_anchors) > 0
@@ -75,6 +83,7 @@ try:
     assert len(foliage.data.uv_layers) == 1
     assert len(foliage.data.materials) == 1
     first_vertices = [tuple(vertex.co) for vertex in foliage.data.vertices]
+    first_uvs = [tuple(loop.uv) for loop in foliage.data.uv_layers.active.data]
 
     # Refresh resolves through foliage selection and remains deterministic.
     bpy.context.view_layer.objects.active = foliage
@@ -102,11 +111,74 @@ try:
     assert [tuple(vertex.co) for vertex in edited.data.vertices] != first_vertices
     assert [tuple(vertex.co) for vertex in wood.data.vertices] == wood_vertices_before
 
+    # Per-tree appearance rotations affect UVs and geometry while remaining deterministic.
+    wood.mtree_foliage_texture_rotation = math.radians(45.0)
+    wood.mtree_foliage_pair_rotation = math.radians(30.0)
+    wood.mtree_foliage_canopy_rotation = math.radians(90.0)
+    preview_material = template.data.materials[0]
+    image_node = preview_material.node_tree.nodes.new("ShaderNodeTexImage")
+    image_node.image = bpy.data.images.new("FoliageControlValidation", width=2, height=2)
+    bpy.context.view_layer.objects.active = wood
+    wood.select_set(True)
+    edited.select_set(False)
+    assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
+    controlled = next(
+        obj
+        for obj in bpy.data.objects
+        if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
+    )
+    controlled_vertices = [tuple(vertex.co) for vertex in controlled.data.vertices]
+    controlled_uvs = [tuple(loop.uv) for loop in controlled.data.uv_layers.active.data]
+    assert controlled_vertices != first_vertices
+    assert controlled_uvs != first_uvs
+    assert any(component < 0.0 for uv in controlled_uvs for component in uv)
+    assert any(component > 1.0 for uv in controlled_uvs for component in uv)
+    controlled_material = controlled.data.materials[0]
+    assert controlled_material is not template.data.materials[0]
+    assert controlled_material.get("mtree_generated_foliage_material") is True
+    assert all(
+        node.extension == "CLIP"
+        for node in controlled_material.node_tree.nodes
+        if node.type == "TEX_IMAGE"
+    )
+    assert math.isclose(
+        controlled.get("mtree_foliage_texture_rotation"),
+        math.radians(45.0),
+        abs_tol=1e-6,
+    )
+    assert math.isclose(
+        controlled.get("mtree_foliage_pair_rotation"),
+        math.radians(30.0),
+        abs_tol=1e-6,
+    )
+    assert math.isclose(
+        controlled.get("mtree_foliage_canopy_rotation"),
+        math.radians(90.0),
+        abs_tol=1e-6,
+    )
+
+    bpy.context.view_layer.objects.active = controlled
+    controlled.select_set(True)
+    wood.select_set(False)
+    assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
+    edited = next(
+        obj
+        for obj in bpy.data.objects
+        if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
+    )
+    assert [tuple(vertex.co) for vertex in edited.data.vertices] == controlled_vertices
+    assert [tuple(loop.uv) for loop in edited.data.uv_layers.active.data] == controlled_uvs
+
     # A failed refresh must leave the last valid foliage object intact.
     saved_payload = wood[anchor_data.ANCHOR_PAYLOAD_KEY]
     wood[anchor_data.ANCHOR_PAYLOAD_KEY] = "corrupt"
     bpy.context.view_layer.objects.active = wood
-    assert bpy.ops.mtree.refresh_foliage_cards() == {"CANCELLED"}
+    try:
+        failed_result = bpy.ops.mtree.refresh_foliage_cards()
+    except RuntimeError as error:
+        assert "unsupported encoding" in str(error)
+        failed_result = {"CANCELLED"}
+    assert failed_result == {"CANCELLED"}
     assert bpy.data.objects.get(edited.name) is edited
     wood[anchor_data.ANCHOR_PAYLOAD_KEY] = saved_payload
 

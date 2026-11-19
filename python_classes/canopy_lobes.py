@@ -247,6 +247,9 @@ def organize_tree_object(wood: bpy.types.Object, generation_seed: int | None = N
     if hasattr(wood, "mtree_foliage_cluster_count"):
         wood.mtree_foliage_cluster_count = 30
         wood.mtree_foliage_card_scale = 1.0
+        wood.mtree_foliage_texture_rotation = 0.0
+        wood.mtree_foliage_pair_rotation = 0.0
+        wood.mtree_foliage_canopy_rotation = 0.0
         wood.mtree_foliage_seed = seed
     return wood
 

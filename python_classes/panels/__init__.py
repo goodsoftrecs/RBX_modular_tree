@@ -33,6 +33,9 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
         if wood is not None:
             canopy_box.prop(wood, "mtree_foliage_cluster_count")
             canopy_box.prop(wood, "mtree_foliage_card_scale")
+            canopy_box.prop(wood, "mtree_foliage_texture_rotation")
+            canopy_box.prop(wood, "mtree_foliage_pair_rotation")
+            canopy_box.prop(wood, "mtree_foliage_canopy_rotation")
             canopy_box.prop(wood, "mtree_foliage_seed")
         refresh_row = canopy_box.row()
         refresh_row.enabled = wood is not None
