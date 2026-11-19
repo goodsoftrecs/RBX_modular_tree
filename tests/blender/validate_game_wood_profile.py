@@ -74,7 +74,7 @@ try:
         print(f"OAK seed={seed} budget triangles={seed_triangle_count}")
         assert 2500 <= seed_triangle_count <= 4000
 
-    for preset in ("PINE", "WILLOW"):
+    for preset in ("PINE", "CEDAR"):
         preset_authoring_counts = mesh_counts(generate(profiles.AUTHORING, preset))
         preset_budget_counts = mesh_counts(generate(profiles.ROBLOX_GAME_BUDGET, preset))
         print(

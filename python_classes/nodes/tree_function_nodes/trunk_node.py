@@ -141,9 +141,13 @@ class TrunkNode(bpy.types.Node, MtreeFunctionNode):
         # Preset buttons
         box = layout.box()
         box.label(text="Presets", icon="PRESET")
-        row = box.row(align=True)
-        for preset_name in ["OAK", "PINE", "WILLOW"]:
-            op = row.operator("mtree.apply_trunk_node_preset", text=preset_name.capitalize())
+        from ...presets import TREE_PRESETS
+
+        grid = box.grid_flow(columns=3, even_columns=True, align=True)
+        for preset_name, preset in TREE_PRESETS.items():
+            if preset_name == "RANDOM":
+                continue
+            op = grid.operator("mtree.apply_trunk_node_preset", text=preset.label)
             op.preset = preset_name
             op.node_tree_name = self.id_data.name
             op.node_name = self.name

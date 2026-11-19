@@ -18,7 +18,7 @@ from .foliage_cards import ensure_foliage_card_template, refresh_foliage_cards_f
 from .m_tree_wrapper import lazy_m_tree as m_tree
 from .mesh_utils import create_mesh_from_cpp
 from .game_output_profiles import (
-    AUTHORING,
+    ROBLOX_GAME_BUDGET,
     WOOD_OUTPUT_PROFILE_ITEMS,
     resolve_wood_mesher_settings,
 )
@@ -34,6 +34,7 @@ from .presets import (
 )
 from .presets.leaf_presets import LEAF_PRESETS, get_leaf_preset_items
 from .resources.node_groups import distribute_leaves
+from .quick_generate_settings import reset_generation_overrides
 
 
 class ExecuteNodeFunction(bpy.types.Operator):
@@ -119,16 +120,16 @@ class AddLeavesModifier(bpy.types.Operator):
 
 
 class QuickGenerateTree(bpy.types.Operator):
-    """Generate a random tree with preset settings."""
+    """Generate a procedural tree from species and focused shape settings."""
 
     bl_idname = "mtree.quick_generate"
-    bl_label = "Generate Random Tree"
+    bl_label = "Generate Tree"
     bl_options = {"REGISTER", "UNDO"}
 
     seed: bpy.props.IntProperty(
         name="Seed", default=0, min=0, description="Random seed (0 = random)"
     )
-    preset: bpy.props.EnumProperty(name="Preset", items=get_preset_items(), default="RANDOM")
+    preset: bpy.props.EnumProperty(name="Tree Type", items=get_preset_items(), default="OAK")
     add_leaves: bpy.props.BoolProperty(
         name="Add Legacy Leaves",
         default=False,
@@ -138,18 +139,60 @@ class QuickGenerateTree(bpy.types.Operator):
         name="Wood Output",
         description="Choose original authoring topology or optimized game topology",
         items=WOOD_OUTPUT_PROFILE_ITEMS,
-        default=AUTHORING,
+        default=ROBLOX_GAME_BUDGET,
     )
+    overall_size: bpy.props.FloatProperty(
+        name="Overall Size", default=1.0, min=0.25, max=3.0
+    )
+    trunk_thickness: bpy.props.FloatProperty(
+        name="Trunk Thickness", default=1.0, min=0.25, max=3.0
+    )
+    branch_length: bpy.props.FloatProperty(
+        name="Branch Length", default=1.0, min=0.25, max=2.5
+    )
+    branch_density: bpy.props.FloatProperty(
+        name="Branch Density", default=1.0, min=0.1, max=2.0
+    )
+    branch_spread: bpy.props.FloatProperty(
+        name="Branch Spread", default=1.0, min=0.25, max=1.75
+    )
+    branch_droop: bpy.props.FloatProperty(
+        name="Branch Droop", default=1.0, min=0.0, max=3.0
+    )
+    randomness: bpy.props.FloatProperty(
+        name="Randomness", default=1.0, min=0.0, max=2.0
+    )
+    secondary_branches: bpy.props.BoolProperty(name="Secondary Branches", default=True)
+    use_sidebar_settings: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     # Maps tree presets to matching leaf presets
     _TREE_TO_LEAF_PRESET = {
         "OAK": "OAK",
         "PINE": "PINE",
-        "WILLOW": "WILLOW",
     }
+
+    def _load_sidebar_settings(self, context):
+        settings = context.scene.mtree_quick_generate_settings
+        for field_name in (
+            "preset",
+            "seed",
+            "wood_output_profile",
+            "add_leaves",
+            "overall_size",
+            "trunk_thickness",
+            "branch_length",
+            "branch_density",
+            "branch_spread",
+            "branch_droop",
+            "randomness",
+            "secondary_branches",
+        ):
+            setattr(self, field_name, getattr(settings, field_name))
 
     def execute(self, context):
         try:
+            if self.use_sidebar_settings:
+                self._load_sidebar_settings(context)
             seed = self.seed if self.seed != 0 else randint(0, 10000)
             start_time = time.time()
 
@@ -159,8 +202,19 @@ class QuickGenerateTree(bpy.types.Operator):
             store_anchor_payload(tree_object, foliage_anchors)
             tree_object["mtree_generation_preset"] = self.preset
             tree_object["mtree_wood_output_profile"] = self.wood_output_profile
+            for field_name in (
+                "overall_size",
+                "trunk_thickness",
+                "branch_length",
+                "branch_density",
+                "branch_spread",
+                "branch_droop",
+                "randomness",
+                "secondary_branches",
+            ):
+                tree_object[f"mtree_{field_name}"] = getattr(self, field_name)
 
-            if self.add_leaves:
+            if self.add_leaves and self.preset != "DEAD_SNAG":
                 active_obj = context.view_layer.objects.active
                 if active_obj is not None:
                     leaf_obj = self._create_leaf_for_preset(seed)
@@ -184,17 +238,45 @@ class QuickGenerateTree(bpy.types.Operator):
 
         trunk = m_tree.TrunkFunction()
         trunk.seed = seed
-        apply_trunk_preset(trunk, self.preset)
+        apply_trunk_preset(
+            trunk,
+            self.preset,
+            overall_size=getattr(self, "overall_size", 1.0),
+            trunk_thickness=getattr(self, "trunk_thickness", 1.0),
+            randomness=getattr(self, "randomness", 1.0),
+        )
 
         branches = m_tree.BranchFunction()
         branches.seed = seed + 1
-        apply_preset(branches, self.preset)
+        apply_preset(
+            branches,
+            self.preset,
+            overall_size=getattr(self, "overall_size", 1.0),
+            branch_length=getattr(self, "branch_length", 1.0),
+            branch_density=getattr(self, "branch_density", 1.0),
+            branch_spread=getattr(self, "branch_spread", 1.0),
+            branch_droop=getattr(self, "branch_droop", 1.0),
+            randomness=getattr(self, "randomness", 1.0),
+        )
 
         preset = TREE_PRESETS.get(self.preset)
-        if preset and preset.sub_branches:
+        if (
+            preset
+            and preset.sub_branches
+            and getattr(self, "secondary_branches", True)
+        ):
             sub_branches = m_tree.BranchFunction()
             sub_branches.seed = seed + 2
-            apply_sub_branch_preset(sub_branches, self.preset)
+            apply_sub_branch_preset(
+                sub_branches,
+                self.preset,
+                overall_size=getattr(self, "overall_size", 1.0),
+                branch_length=getattr(self, "branch_length", 1.0),
+                branch_density=getattr(self, "branch_density", 1.0),
+                branch_spread=getattr(self, "branch_spread", 1.0),
+                branch_droop=getattr(self, "branch_droop", 1.0),
+                randomness=getattr(self, "randomness", 1.0),
+            )
             branches.add_child(sub_branches)
 
         trunk.add_child(branches)
@@ -255,6 +337,8 @@ class QuickGenerateTree(bpy.types.Operator):
         return obj
 
     def invoke(self, context, event):
+        if self.use_sidebar_settings:
+            return self.execute(context)
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
@@ -262,7 +346,27 @@ class QuickGenerateTree(bpy.types.Operator):
         layout.prop(self, "preset")
         layout.prop(self, "seed")
         layout.prop(self, "wood_output_profile")
+        layout.prop(self, "overall_size")
+        layout.prop(self, "trunk_thickness")
+        layout.prop(self, "branch_length")
+        layout.prop(self, "branch_density")
+        layout.prop(self, "branch_spread")
+        layout.prop(self, "branch_droop")
+        layout.prop(self, "randomness")
+        layout.prop(self, "secondary_branches")
         layout.prop(self, "add_leaves")
+
+
+class ResetQuickGenerateOverrides(bpy.types.Operator):
+    """Reset focused tree-shape overrides while retaining type and seed."""
+
+    bl_idname = "mtree.reset_quick_generate_overrides"
+    bl_label = "Reset Overrides"
+    bl_options = {"UNDO"}
+
+    def execute(self, context):
+        reset_generation_overrides(context.scene.mtree_quick_generate_settings)
+        return {"FINISHED"}
 
 
 class ExportPivotPainter(bpy.types.Operator):
@@ -529,6 +633,7 @@ _classes = [
     ExecuteNodeFunction,
     AddLeavesModifier,
     QuickGenerateTree,
+    ResetQuickGenerateOverrides,
     CreateCanopyLobes,
     RefreshCanopyLobes,
     CreateFoliageCardTemplate,

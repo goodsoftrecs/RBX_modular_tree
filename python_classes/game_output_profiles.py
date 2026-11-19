@@ -33,7 +33,7 @@ WOOD_OUTPUT_PROFILE_ITEMS = (
     (
         ROBLOX_GAME_BUDGET,
         "Roblox Game (~3K Tris)",
-        "Target roughly 3,000 Blender triangles for Oak wood while preserving major branches",
+        "Keep stock species near the 3K triangle range while preserving major branches",
     ),
 )
 

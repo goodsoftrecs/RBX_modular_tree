@@ -4,6 +4,7 @@ import bpy
 from bpy.utils import register_class, unregister_class
 
 from ..canopy_lobes import find_wood_for_object
+from ..presets import TREE_PRESETS
 
 
 class MTREE_PT_QuickGenerate(bpy.types.Panel):
@@ -20,8 +21,38 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
 
         # Quick generate section
         box = layout.box()
-        box.label(text="Quick Generate", icon="OUTLINER_OB_MESH")
-        box.operator("mtree.quick_generate", text="Generate Tree")
+        box.label(text="Tree Generation", icon="OUTLINER_OB_MESH")
+        settings = context.scene.mtree_quick_generate_settings
+        box.prop(settings, "preset")
+        box.prop(settings, "seed")
+        box.prop(settings, "wood_output_profile")
+
+        shape_box = box.box()
+        shape_box.label(text="Shape Overrides")
+        shape_box.prop(settings, "overall_size")
+        shape_box.prop(settings, "trunk_thickness")
+        shape_box.prop(settings, "branch_length")
+        shape_box.prop(settings, "branch_density")
+        shape_box.prop(settings, "branch_spread")
+        shape_box.prop(settings, "branch_droop")
+        shape_box.prop(settings, "randomness")
+
+        preset = TREE_PRESETS.get(settings.preset)
+        secondary_row = shape_box.row()
+        secondary_row.enabled = bool(preset and preset.sub_branches)
+        secondary_row.prop(settings, "secondary_branches")
+        shape_box.operator(
+            "mtree.reset_quick_generate_overrides", text="Reset Overrides"
+        )
+
+        leaf_row = box.row()
+        leaf_row.enabled = settings.preset != "DEAD_SNAG"
+        leaf_row.prop(settings, "add_leaves")
+        generate = box.operator("mtree.quick_generate", text="Generate Tree")
+        generate.use_sidebar_settings = True
+
+        if settings.branch_density > 1.25:
+            box.label(text="Higher density may exceed the ~3K target", icon="INFO")
 
         canopy_box = layout.box()
         canopy_box.label(text="Foliage Cards", icon="OUTLINER_OB_MESH")

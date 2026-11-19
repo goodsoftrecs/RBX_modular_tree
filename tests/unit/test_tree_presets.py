@@ -5,6 +5,7 @@ from tree_presets import (
     PROPERTY_WRAPPER_PARAMS,
     TREE_PRESETS,
     TreePreset,
+    _apply_branch_overrides,
     _generate_random_params,
     get_preset_items,
 )
@@ -57,7 +58,18 @@ class TestTreePresetsRegistry:
 
     def test_expected_presets_exist(self):
         """Registry contains all expected preset types."""
-        expected = {"OAK", "PINE", "WILLOW", "RANDOM"}
+        expected = {
+            "OAK",
+            "BIRCH",
+            "PINE",
+            "CEDAR",
+            "WALNUT",
+            "SEQUOIA",
+            "HEMLOCK",
+            "TEAK",
+            "DEAD_SNAG",
+            "RANDOM",
+        }
         assert set(TREE_PRESETS.keys()) == expected
 
     def test_all_presets_are_tree_preset_instances(self):
@@ -181,26 +193,57 @@ class TestPinePreset:
         assert pine.branches["crown_shape"] == "Conical"
 
     def test_pine_preset_has_dense_sub_branches(self):
-        """PINE preset has dense sub-branches for needle coverage."""
+        """PINE keeps a conservative secondary layer for needle coverage."""
         pine = TREE_PRESETS["PINE"]
-        assert pine.sub_branches["branches_density"] == 4.0
+        assert pine.sub_branches["branches_density"] == 1.0
 
 
-class TestWillowPreset:
-    """Tests for WILLOW preset sub-branches and leaf params."""
+class TestAuthoredSpecies:
+    """Tests for requested species-specific structural profiles."""
 
-    def test_willow_preset_has_sub_branches(self):
-        """WILLOW preset defines sub_branches for cascading whips."""
-        willow = TREE_PRESETS["WILLOW"]
-        assert willow.sub_branches != {}
-        assert "gravity_strength" in willow.sub_branches
-        assert "length" in willow.sub_branches
-        assert "stiffness" in willow.sub_branches
+    def test_living_species_have_secondary_profiles(self):
+        for name in (
+            "OAK",
+            "BIRCH",
+            "PINE",
+            "CEDAR",
+            "WALNUT",
+            "SEQUOIA",
+            "HEMLOCK",
+            "TEAK",
+        ):
+            assert TREE_PRESETS[name].sub_branches, name
 
-    def test_willow_preset_has_leaf_params(self):
-        """WILLOW preset defines leaf distribution overrides."""
-        willow = TREE_PRESETS["WILLOW"]
-        assert willow.leaf_params != {}
-        assert "density" in willow.leaf_params
-        assert "scale" in willow.leaf_params
-        assert "max_radius" in willow.leaf_params
+    def test_dead_snag_is_sparse_and_has_no_secondary_layer(self):
+        snag = TREE_PRESETS["DEAD_SNAG"]
+        assert snag.sub_branches == {}
+        assert snag.branches["branches_density"] < 0.5
+        assert snag.branches["break_chance"] >= 0.3
+
+
+def test_focused_branch_overrides_scale_only_targeted_parameters():
+    base = {
+        "length": 4.0,
+        "branches_density": 1.5,
+        "start_angle": 40.0,
+        "gravity_strength": 10.0,
+        "randomness": 0.5,
+        "start_radius": 0.4,
+    }
+    resolved = _apply_branch_overrides(
+        base,
+        overall_size=2.0,
+        branch_length=1.5,
+        branch_density=0.5,
+        branch_spread=1.25,
+        branch_droop=2.0,
+        randomness=0.5,
+    )
+
+    assert resolved["length"] == 12.0
+    assert resolved["branches_density"] == 0.75
+    assert resolved["start_angle"] == 50.0
+    assert resolved["gravity_strength"] == 20.0
+    assert resolved["randomness"] == 0.25
+    assert resolved["start_radius"] == 0.4
+    assert base["length"] == 4.0

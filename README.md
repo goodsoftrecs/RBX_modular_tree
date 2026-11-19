@@ -8,13 +8,14 @@ A Blender tree-authoring fork focused on producing practical game-ready geometry
 world-authoring pipeline.
 
 This fork is based on [GoodPie's Modular Tree](https://github.com/GoodPie/modular_tree). The
-upstream authoring output remains available; RBX-specific output is an explicit opt-in profile.
+upstream authoring output remains available; Quick Generate defaults to the RBX game-budget profile.
 
 > **Note:** This is a maintained fork of [Mtree by MaximeHerpin](https://github.com/MaximeHerpin/modular_tree). Some features are no longer best practice and work is being done to implement these properly
 
 ## Features
 
-- **Quick Generate** - One-click tree generation with presets (Oak, Pine, Willow)
+- **Quick Generate** - Sidebar generation for Oak, Birch, Pine, Cedar, Walnut, Sequoia,
+  Hemlock, Teak, Dead/Snag, and Random trees
 - **Node-based workflow** - Build trees visually by connecting nodes for full control
 - **Procedural generation** - Control trunk, branches, and leaves with parameters
 - **Multi-level branching** - Chain branch nodes for complex tree structures
@@ -55,8 +56,14 @@ https://extensions.blender.org/add-ons/modular-tree/
 ### Quick Generate (Easiest)
 1. Open the **3D View** sidebar (press `N`)
 2. Select the **MTree** tab
-3. Click **Generate Tree** and choose a preset (Oak, Pine, Willow, or Random)
-4. Set **Wood Output** to **Roblox Game (Low Detail)** for optimized wood topology
+3. Choose a **Tree Type**, seed, and focused shape overrides
+4. Leave **Wood Output** on the default **Roblox Game (~3K Tris)** profile
+5. Click **Generate Tree**
+
+Focused overrides adjust Overall Size, Trunk Thickness, Branch Length, Branch Density, Branch
+Spread, Branch Droop, Randomness, and the species' Secondary Branch layer. Neutral `1.0` values
+preserve the authored species silhouette. Trunk Thickness changes radii without adding radial
+rings; density and secondary branches are the controls most likely to increase topology.
 
 ### Foliage Cards
 
@@ -94,18 +101,19 @@ automatic LOD generation remain later stages and do not require changing anchor 
 5. Click **Generate Tree** in the Tree Mesher node
 6. (Optional) Click **Add Leaves** to distribute leaves on the tree
 
-The original **Authoring** wood profile remains the default. The current Roblox Game profile
-uses 8-sided rings, one smoothing pass, and junction-safe lengthwise ring thinning. Leaf
-optimization is intentionally separate and is not part of this first wood pass.
+The node editor retains the original **Authoring** wood profile as its default. Quick Generate
+defaults to **Roblox Game (~3K Tris)**. The intermediate Roblox Game profile uses 8-sided rings,
+one smoothing pass, and junction-safe lengthwise ring thinning. Leaf optimization is separate.
 
 For a more aggressive result, select **Roblox Game (~3K Tris)**. It preserves the trunk and
 two branch generations, uses six-sided wood rings without a smoothing subdivision, thins rings
 lengthwise, and omits deeper or extremely thin twig families before mesh construction. The ~3K
-label refers to Blender's triangulated count for representative Oak seeds, not quad-face count.
-Other species and custom generator settings can vary, so inspect Blender's triangle count before
-export.
+label is a global target rather than a hard cap. Stock validation currently ranges from very sparse
+Dead/Snag geometry through a roughly 4.3K Pine; seeds and topology-sensitive overrides can vary,
+so inspect Blender's triangle count before export.
 
-**Tip:** Select a Branch node and press `N` to see organized parameter sections with descriptions, plus **preset buttons** (Oak, Pine, Willow, Random) to quickly configure branch characteristics.
+**Tip:** Select a Branch node and press `N` to see organized parameter sections with descriptions,
+plus the same species preset buttons used by Quick Generate.
 
 ## Node Types
 
@@ -122,7 +130,8 @@ export.
 ## Customization
 
 ### Branch Parameters
-Use the **Presets** section in the inspector panel (`N` key) to apply Oak, Pine, Willow, or Random configurations, or manually adjust:
+Use the **Presets** section in the inspector panel (`N` key) to apply a Quick Generate species
+configuration or manually adjust:
 - **Seed** - Controls randomization (same seed = same tree)
 - **Length/Radius** - Size and thickness
 - **Up Attraction/Gravity** - How branches grow relative to gravity
