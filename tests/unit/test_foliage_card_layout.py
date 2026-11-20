@@ -7,9 +7,11 @@ import pytest
 from foliage_anchor_data import FoliageAnchor
 from foliage_card_layout import (
     build_card_layout,
+    classify_missing_branch_ids,
     eligible_anchor_indices,
     rotate_card_layout_about_z,
     rotate_uv_to_fit,
+    rotate_uv_within_bounds,
 )
 
 
@@ -50,6 +52,52 @@ def test_layout_is_deterministic_and_returns_exact_card_count():
     assert first == second
     assert len(first) == 16
     assert {placement.cluster_index for placement in first} == set(range(8))
+
+
+def test_geometric_detection_uses_middle_and_outer_branch_path():
+    anchors = [
+        FoliageAnchor((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.5, 0, 0, 1.0),
+        FoliageAnchor((1.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.15, 1, 1, 0.2),
+        FoliageAnchor((2.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.10, 1, 1, 0.6),
+        FoliageAnchor((3.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.05, 1, 1, 1.0),
+        FoliageAnchor((0.0, 1.0, 2.0), (0.0, 1.0, 0.0), 0.15, 1, 2, 0.2),
+        FoliageAnchor((0.0, 2.0, 2.0), (0.0, 1.0, 0.0), 0.10, 1, 2, 0.6),
+        FoliageAnchor((0.0, 3.0, 2.0), (0.0, 1.0, 0.0), 0.05, 1, 2, 1.0),
+    ]
+
+    def distance_to_wood(position):
+        # Both branches touch wood near their bases, but only branch 1 follows wood outward.
+        if position[0] >= 1.5:
+            return 0.08
+        if position[1] >= 1.5:
+            return 2.0
+        return 0.05
+
+    assert classify_missing_branch_ids(anchors, distance_to_wood, 10.0) == {2}
+
+
+def test_physical_branches_precede_missing_branches_then_missing_runs_outward():
+    anchors = [
+        FoliageAnchor((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.5, 0, 0, 1.0),
+        FoliageAnchor((1.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.12, 1, 1, 0.5),
+        FoliageAnchor((2.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.08, 1, 1, 1.0),
+        FoliageAnchor((0.2, 0.0, 2.0), (0.0, 1.0, 0.0), 0.18, 2, 2, 0.05),
+        FoliageAnchor((0.2, 1.0, 2.0), (0.0, 1.0, 0.0), 0.10, 2, 2, 0.5),
+        FoliageAnchor((0.2, 2.0, 2.0), (0.0, 1.0, 0.0), 0.05, 2, 2, 1.0),
+    ]
+    layout = build_card_layout(
+        anchors,
+        cluster_count=5,
+        scale_multiplier=1.0,
+        seed=21,
+        missing_branch_ids=frozenset({2}),
+    )
+    selected = [layout[index].anchor_index for index in range(0, len(layout), 2)]
+
+    assert all(anchors[index].branch_id == 1 for index in selected[:2])
+    missing_progress = [anchors[index].branch_progress for index in selected[2:]]
+    assert missing_progress == sorted(missing_progress)
+    assert missing_progress[0] == 0.05
 
 
 def test_trunk_and_thick_branch_bases_are_ineligible():
@@ -94,6 +142,43 @@ def test_texture_rotation_expands_sampling_uvs_for_clipped_fit():
     assert any(component < 0.0 for uv in rotated for component in uv)
     assert any(component > 1.0 for uv in rotated for component in uv)
     assert rotated != list(corners)
+
+
+def test_atlas_texture_rotation_remains_inside_assigned_quadrant():
+    bounds = (0.5, 0.5, 1.0, 1.0)
+    corners = ((0.5, 0.5), (1.0, 0.5), (1.0, 1.0), (0.5, 1.0))
+    rotated = [
+        rotate_uv_within_bounds(uv, math.radians(45.0), bounds) for uv in corners
+    ]
+
+    assert rotated != list(corners)
+    assert all(0.5 <= u <= 1.0 and 0.5 <= v <= 1.0 for u, v in rotated)
+
+
+def test_four_template_variants_use_balanced_deterministic_pairs():
+    first = build_card_layout(
+        _anchors(),
+        cluster_count=10,
+        scale_multiplier=1.0,
+        seed=538,
+        template_slots=(1, 2, 3, 4),
+    )
+    second = build_card_layout(
+        _anchors(),
+        cluster_count=10,
+        scale_multiplier=1.0,
+        seed=538,
+        template_slots=(1, 2, 3, 4),
+    )
+
+    assert first == second
+    cluster_slots = []
+    for index in range(0, len(first), 2):
+        pair = first[index : index + 2]
+        assert pair[0].template_slot == pair[1].template_slot
+        cluster_slots.append(pair[0].template_slot)
+    counts = {slot: cluster_slots.count(slot) for slot in range(1, 5)}
+    assert max(counts.values()) - min(counts.values()) <= 1
 
 
 def test_pair_rotation_rolls_cards_without_changing_selection_or_v_angle():

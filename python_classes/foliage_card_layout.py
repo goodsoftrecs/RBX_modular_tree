@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, replace
+from typing import Callable
 
 try:
     from .foliage_anchor_data import FoliageAnchor, validate_anchor
@@ -26,6 +27,7 @@ class CardPlacement:
     direction: tuple[float, float, float]
     normal: tuple[float, float, float]
     scale: float
+    template_slot: int = 1
 
 
 def _length(vector: tuple[float, float, float]) -> float:
@@ -89,6 +91,58 @@ def rotate_uv_to_fit(
     )
 
 
+def rotate_uv_within_bounds(
+    uv: tuple[float, float],
+    angle_radians: float,
+    bounds: tuple[float, float, float, float],
+) -> tuple[float, float]:
+    """Rotate an atlas UV without allowing sampling to escape its assigned cell."""
+
+    if not math.isfinite(angle_radians):
+        raise ValueError("Texture rotation must be finite")
+    minimum_u, minimum_v, maximum_u, maximum_v = bounds
+    width = maximum_u - minimum_u
+    height = maximum_v - minimum_v
+    if width <= 0.0 or height <= 0.0:
+        raise ValueError("Atlas UV bounds must have positive width and height")
+
+    normalized_u = (float(uv[0]) - minimum_u) / width
+    normalized_v = (float(uv[1]) - minimum_v) / height
+    if not (-1e-6 <= normalized_u <= 1.0 + 1e-6) or not (
+        -1e-6 <= normalized_v <= 1.0 + 1e-6
+    ):
+        raise ValueError("Template UV lies outside its assigned atlas cell")
+
+    sample_angle = -angle_radians
+    cosine = math.cos(sample_angle)
+    sine = math.sin(sample_angle)
+    sampling_scale = 1.0 / max(abs(cosine) + abs(sine), 1.0)
+    centered_u = (normalized_u - 0.5) * sampling_scale
+    centered_v = (normalized_v - 0.5) * sampling_scale
+    rotated_u = 0.5 + centered_u * cosine - centered_v * sine
+    rotated_v = 0.5 + centered_u * sine + centered_v * cosine
+    return (
+        minimum_u + min(1.0, max(0.0, rotated_u)) * width,
+        minimum_v + min(1.0, max(0.0, rotated_v)) * height,
+    )
+
+
+def _template_slots_for_clusters(
+    cluster_count: int, template_slots: tuple[int, ...], seed: int
+) -> list[int]:
+    """Return balanced deterministic shuffled cycles without perturbing anchor RNG."""
+
+    if not template_slots or any(slot < 1 for slot in template_slots):
+        raise ValueError("At least one positive foliage template slot is required")
+    rng = random.Random(int(seed) ^ 0x6D2B79F5)
+    assigned: list[int] = []
+    while len(assigned) < cluster_count:
+        cycle = list(template_slots)
+        rng.shuffle(cycle)
+        assigned.extend(cycle)
+    return assigned[:cluster_count]
+
+
 def rotate_card_layout_about_z(
     placements: list[CardPlacement], angle_radians: float
 ) -> list[CardPlacement]:
@@ -124,7 +178,10 @@ def _percentile(values: list[float], fraction: float) -> float:
     return ordered[index]
 
 
-def eligible_anchor_indices(anchors: list[FoliageAnchor]) -> list[int]:
+def eligible_anchor_indices(
+    anchors: list[FoliageAnchor],
+    missing_branch_ids: frozenset[int] = frozenset(),
+) -> list[int]:
     """Exclude trunk, branch bases, and the thickest interior graph locations."""
 
     validated = [validate_anchor(anchor) for anchor in anchors]
@@ -137,12 +194,53 @@ def eligible_anchor_indices(anchors: list[FoliageAnchor]) -> list[int]:
         index
         for index, anchor in enumerate(validated)
         if anchor.hierarchy_depth > 0
-        and anchor.branch_progress >= 0.2
-        and anchor.radius <= radius_cutoff + 1e-9
+        and (
+            anchor.branch_id in missing_branch_ids
+            or (
+                anchor.branch_progress >= 0.2
+                and anchor.radius <= radius_cutoff + 1e-9
+            )
+        )
     ]
     if not eligible:
         raise ValueError("Complete tree graph has no eligible outer foliage anchors")
     return eligible
+
+
+def classify_missing_branch_ids(
+    anchors: list[FoliageAnchor],
+    distance_to_wood: Callable[[tuple[float, float, float]], float],
+    tree_extent: float,
+) -> set[int]:
+    """Infer omitted branches from the middle/outer path's distance to final wood."""
+
+    if not math.isfinite(tree_extent) or tree_extent <= 0.0:
+        raise ValueError("Tree extent must be finite and greater than zero")
+    validated = [validate_anchor(anchor) for anchor in anchors]
+    branches: dict[int, list[FoliageAnchor]] = {}
+    for anchor in validated:
+        if anchor.hierarchy_depth <= 0:
+            continue
+        branches.setdefault(anchor.branch_id, []).append(anchor)
+
+    missing: set[int] = set()
+    minimum_tolerance = tree_extent * 0.0125
+    for branch_id, branch_anchors in branches.items():
+        ordered = sorted(branch_anchors, key=lambda anchor: anchor.branch_progress)
+        samples = [anchor for anchor in ordered if anchor.branch_progress >= 0.45]
+        if not samples:
+            samples = [ordered[-1]]
+        near_count = 0
+        for anchor in samples:
+            distance = float(distance_to_wood(anchor.position))
+            if not math.isfinite(distance) or distance < 0.0:
+                raise ValueError("Wood-distance query returned an invalid distance")
+            tolerance = max(minimum_tolerance, anchor.radius * 2.5)
+            if distance <= tolerance:
+                near_count += 1
+        if near_count * 2 < len(samples):
+            missing.add(branch_id)
+    return missing
 
 
 def _anchor_scores(
@@ -217,6 +315,78 @@ def _select_anchor_indices(
     return selected
 
 
+def _select_missing_branch_indices(
+    anchors: list[FoliageAnchor],
+    eligible: list[int],
+    count: int,
+    rng: random.Random,
+) -> list[int]:
+    """Consume missing branches round-robin from attachment-side progress outward."""
+
+    if count <= 0 or not eligible:
+        return []
+    branches: dict[int, list[int]] = {}
+    for index in eligible:
+        branches.setdefault(anchors[index].branch_id, []).append(index)
+    for indices in branches.values():
+        indices.sort(key=lambda index: (anchors[index].branch_progress, index))
+
+    branch_order = sorted(branches)
+    rng.shuffle(branch_order)
+    selected: list[int] = []
+    layer = 0
+    while len(selected) < count:
+        added = False
+        for branch_id in branch_order:
+            indices = branches[branch_id]
+            if layer < len(indices):
+                selected.append(indices[layer])
+                added = True
+                if len(selected) == count:
+                    break
+        if not added:
+            break
+        layer += 1
+    return selected
+
+
+def select_anchor_indices_with_branch_priority(
+    anchors: list[FoliageAnchor],
+    eligible: list[int],
+    count: int,
+    rng: random.Random,
+    missing_branch_ids: frozenset[int],
+) -> list[int]:
+    """Select physical anchors first, then missing branches connection-outward."""
+
+    physical = [
+        index for index in eligible if anchors[index].branch_id not in missing_branch_ids
+    ]
+    missing = [
+        index for index in eligible if anchors[index].branch_id in missing_branch_ids
+    ]
+
+    selected: list[int] = []
+    physical_count = min(count, len(physical))
+    if physical_count:
+        selected.extend(_select_anchor_indices(anchors, physical, physical_count, rng))
+
+    remaining = count - len(selected)
+    if remaining and missing:
+        selected.extend(
+            _select_missing_branch_indices(anchors, missing, remaining, rng)
+        )
+
+    if len(selected) < count:
+        if not selected:
+            raise ValueError("No eligible foliage anchors were available for selection")
+        repeat_order = selected.copy()
+        rng.shuffle(repeat_order)
+        while len(selected) < count:
+            selected.append(repeat_order[(len(selected) - len(repeat_order)) % len(repeat_order)])
+    return selected
+
+
 def _base_scale(anchors: list[FoliageAnchor], eligible: list[int], count: int) -> float:
     positions = [anchors[index].position for index in eligible]
     extents = [
@@ -243,6 +413,8 @@ def build_card_layout(
     seed: int,
     v_angle_degrees: float = DEFAULT_V_ANGLE_DEGREES,
     pair_rotation_radians: float = 0.0,
+    template_slots: tuple[int, ...] = (1,),
+    missing_branch_ids: frozenset[int] = frozenset(),
 ) -> list[CardPlacement]:
     """Return exactly two branch-aligned cards for every requested cluster."""
 
@@ -258,9 +430,16 @@ def build_card_layout(
         raise ValueError("Card pair rotation must be finite")
 
     validated = [validate_anchor(anchor) for anchor in anchors]
-    eligible = eligible_anchor_indices(validated)
+    eligible = eligible_anchor_indices(validated, missing_branch_ids)
     rng = random.Random(int(seed))
-    selected = _select_anchor_indices(validated, eligible, cluster_count, rng)
+    selected = select_anchor_indices_with_branch_priority(
+        validated,
+        eligible,
+        cluster_count,
+        rng,
+        missing_branch_ids,
+    )
+    assigned_slots = _template_slots_for_clusters(cluster_count, template_slots, seed)
     base_scale = _base_scale(validated, eligible, cluster_count) * scale_multiplier
     half_angle = math.radians(v_angle_degrees) * 0.5
 
@@ -297,6 +476,7 @@ def build_card_layout(
                     direction=direction,
                     normal=card_normal,
                     scale=varied_scale,
+                    template_slot=assigned_slots[cluster_index],
                 )
             )
     return placements

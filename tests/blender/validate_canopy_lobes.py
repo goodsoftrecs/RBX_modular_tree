@@ -49,13 +49,57 @@ try:
     )
     wood = bpy.context.active_object
     assert wood is not None
-    assert wood.name.startswith("Tree_0538_Wood")
+    assert wood.name == "Oak_1_Wood"
     assert wood.get("mtree_role") == "WOOD"
     assert wood.get("mtree_generation_seed") == 538
+    assert wood.get("mtree_tree_species") == "OAK"
+    assert wood.get("mtree_tree_number") == 1
     assert wood.mtree_canopy_seed == 538
     assert wood.mtree_lobe_count == 8
     assert wood.mtree_lobe_scale == 1.0
-    assert any(collection.name.startswith("Tree_0538") for collection in wood.users_collection)
+    assert any(collection.name == "Oak_1" for collection in wood.users_collection)
+
+    # Numbering advances within a species and restarts for a different species.
+    oak_two = wood.copy()
+    oak_two.data = wood.data.copy()
+    oak_two.parent = None
+    for key in (
+        "mtree_role",
+        "mtree_tree_id",
+        "mtree_generation_seed",
+        "mtree_tree_species",
+        "mtree_tree_number",
+    ):
+        if key in oak_two:
+            del oak_two[key]
+    bpy.context.scene.collection.objects.link(oak_two)
+    canopy_lobes = importlib.import_module(
+        f"{repo_root.name}.python_classes.canopy_lobes"
+    )
+    canopy_lobes.organize_tree_object(
+        oak_two, generation_seed=539, species_id="OAK", species_label="Oak"
+    )
+    assert oak_two.name == "Oak_2_Wood"
+    assert oak_two.get("mtree_tree_number") == 2
+
+    birch_one = wood.copy()
+    birch_one.data = wood.data.copy()
+    birch_one.parent = None
+    for key in (
+        "mtree_role",
+        "mtree_tree_id",
+        "mtree_generation_seed",
+        "mtree_tree_species",
+        "mtree_tree_number",
+    ):
+        if key in birch_one:
+            del birch_one[key]
+    bpy.context.scene.collection.objects.link(birch_one)
+    canopy_lobes.organize_tree_object(
+        birch_one, generation_seed=540, species_id="BIRCH", species_label="Birch"
+    )
+    assert birch_one.name == "Birch_1_Wood"
+    assert birch_one.get("mtree_tree_number") == 1
 
     wood_vertices_before = [tuple(vertex.co) for vertex in wood.data.vertices]
     assert bpy.ops.mtree.refresh_canopy_lobes() == {"FINISHED"}
@@ -67,6 +111,9 @@ try:
         if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
     )
     assert foliage.parent is wood.parent
+    assert foliage.name == "Oak_1_Foliage"
+    assert foliage.get("mtree_tree_species") == "OAK"
+    assert foliage.get("mtree_tree_number") == 1
     assert len(foliage.data.polygons) == 8 * 32
     assert len(foliage.data.uv_layers) == 1
     first_vertices = [tuple(vertex.co) for vertex in foliage.data.vertices]

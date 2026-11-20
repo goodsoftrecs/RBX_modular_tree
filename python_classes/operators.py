@@ -14,7 +14,11 @@ from .canopy_lobes import (
     refresh_canopy_for_object,
 )
 from .foliage_anchor_data import anchors_from_native, store_anchor_payload
-from .foliage_cards import ensure_foliage_card_template, refresh_foliage_cards_for_object
+from .foliage_cards import (
+    default_tree_foliage_set_id,
+    ensure_foliage_card_set,
+    refresh_foliage_cards_for_object,
+)
 from .m_tree_wrapper import lazy_m_tree as m_tree
 from .mesh_utils import create_mesh_from_cpp
 from .game_output_profiles import (
@@ -198,10 +202,20 @@ class QuickGenerateTree(bpy.types.Operator):
 
             cpp_mesh, foliage_anchors = self._generate_tree(seed)
             tree_object = self._create_blender_object(context, cpp_mesh, f"Tree_{seed}")
-            organize_tree_object(tree_object, generation_seed=seed)
+            preset = TREE_PRESETS.get(self.preset)
+            species_label = preset.label if preset is not None else self.preset.title()
+            organize_tree_object(
+                tree_object,
+                generation_seed=seed,
+                species_id=self.preset,
+                species_label=species_label,
+            )
             store_anchor_payload(tree_object, foliage_anchors)
             tree_object["mtree_generation_preset"] = self.preset
             tree_object["mtree_wood_output_profile"] = self.wood_output_profile
+            tree_object.mtree_foliage_set_id = default_tree_foliage_set_id(
+                self.preset, context.scene.mtree_foliage_library_set_id
+            )
             for field_name in (
                 "overall_size",
                 "trunk_thickness",
@@ -476,17 +490,19 @@ class RefreshCanopyLobes(bpy.types.Operator):
 
 
 class CreateFoliageCardTemplate(bpy.types.Operator):
-    """Create the editable source quad used by every foliage card pair."""
+    """Initialize or repair the selected four-slot species foliage set."""
 
     bl_idname = "mtree.create_foliage_card_template"
-    bl_label = "Create Foliage Card Template"
+    bl_label = "Initialize / Repair Foliage Set"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
         try:
-            template, created = ensure_foliage_card_template()
-            action = "created" if created else "preserved"
-            self.report({"INFO"}, f"Foliage card template {action}: {template.name}")
+            collection, templates, created = ensure_foliage_card_set(context)
+            self.report(
+                {"INFO"},
+                f"{collection.name} ready; created {created}, preserved {len(templates) - created}",
+            )
             return {"FINISHED"}
         except Exception as exc:
             self.report({"ERROR"}, f"Failed to create foliage card template: {exc}")

@@ -106,20 +106,25 @@ try:
     settings.overall_size = 0.75
     settings.trunk_thickness = 1.5
     settings.branch_density = 0.8
+    bpy.context.scene.mtree_foliage_library_set_id = "CEDAR"
+    assert bpy.ops.mtree.create_foliage_card_template() == {"FINISHED"}
     print("SIDEBAR_GENERATION_START", flush=True)
     assert (
         bpy.ops.mtree.quick_generate("INVOKE_DEFAULT", use_sidebar_settings=True)
         == {"FINISHED"}
     )
     wood = bpy.context.active_object
+    assert wood.name == "Cedar_1_Wood"
+    assert wood.get("mtree_tree_species") == "CEDAR"
+    assert wood.get("mtree_tree_number") == 1
     assert wood.get("mtree_generation_preset") == "CEDAR"
     assert wood.get("mtree_wood_output_profile") == profiles.ROBLOX_GAME_BUDGET
     assert math.isclose(wood.get("mtree_overall_size"), 0.75, abs_tol=1e-6)
     assert math.isclose(wood.get("mtree_trunk_thickness"), 1.5, abs_tol=1e-6)
     assert math.isclose(wood.get("mtree_branch_density"), 0.8, abs_tol=1e-6)
+    assert wood.mtree_foliage_set_id == "CEDAR"
     print("SIDEBAR_GENERATION_OK", flush=True)
 
-    assert bpy.ops.mtree.create_foliage_card_template() == {"FINISHED"}
     assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
     foliage = next(
         obj

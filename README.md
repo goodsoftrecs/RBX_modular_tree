@@ -60,6 +60,10 @@ https://extensions.blender.org/add-ons/modular-tree/
 4. Leave **Wood Output** on the default **Roblox Game (~3K Tris)** profile
 5. Click **Generate Tree**
 
+Generated hierarchies use readable per-species numbering such as `Oak_1`, `Oak_2`, and `Birch_1`.
+The collection, root, wood, and generated foliage share that base name while internal UUID metadata
+continues to provide stable ownership.
+
 Focused overrides adjust Overall Size, Trunk Thickness, Branch Length, Branch Density, Branch
 Spread, Branch Droop, Randomness, and the species' Secondary Branch layer. Neutral `1.0` values
 preserve the authored species silhouette. Trunk Thickness changes radii without adding radial
@@ -67,31 +71,52 @@ rings; density and secondary branches are the controls most likely to increase t
 
 ### Foliage Cards
 
-1. Generate a new tree with **Add Legacy Leaves** disabled (the default).
-2. Click **Create Foliage Card Template** once to create the editable
-   `MTree_FoliageLibrary/FoliageCard_Template` quad.
-3. Assign your RGBA twig-and-leaf material to that template. Its UV map uses the full `0-1` range.
-4. Select the generated tree's wood object.
-5. Adjust **Foliage Cluster Count**, **Card Scale** (up to `12x`), **Texture Rotation**,
-   **Card Pair Rotation**, **Canopy Rotation**, or **Foliage Seed** in the MTree sidebar.
-6. Click **Generate / Refresh Foliage Cards**.
+1. In **Foliage Cards**, choose Oak, Birch, Pine, Cedar, Walnut, Sequoia, Hemlock, or Teak.
+2. Click **Initialize / Repair Foliage Set**. This creates one species collection containing a text
+   label and four editable cards: Large A, Large B, Small A, and Small B.
+3. Edit the one shared material and assign your transparent `2 x 2` branch atlas. The upper cards
+   use the two upper quadrants; the lower cards use the two lower quadrants.
+4. Shape, rotate, and scale the four source cards independently. Re-running the initializer
+   preserves valid cards and creates only a missing slot.
+5. Generate a tree with **Add Legacy Leaves** disabled (the default), then select its wood object.
+   A matching initialized species set is selected automatically; **Tree Foliage Set** can override
+   it.
+6. Adjust **Foliage Cluster Count**, **Card Scale** (up to `12x`), signed **Branch Distance**,
+   **Texture Rotation**, **Card Pair Rotation**, **Canopy Rotation**, or **Foliage Seed**.
+7. Click **Generate / Refresh Foliage Cards**.
+
+The atlas layout is fixed: Large A is top-left, Large B is top-right, Small A is bottom-left, and
+Small B is bottom-right. Keep branch pixels and transparent padding inside each quadrant. All four
+source cards in a species set must share exactly one material datablock.
+
+The exact top-right UV corner of every quadrant is the branch attachment point. Put the end of each
+photographed branch there; generated cards pin that corner to their physical or virtual branch and
+extend from that corner toward the card's geometric center. **Branch Distance** offsets the two
+planes independently along their perpendicular normals: `0` sits on the branch, positive values
+move both planes outward, and negative values bury them into the branch. Card Scale grows or shrinks
+around the pinned corner, so changing scale does not move the attachment.
 
 Each cluster contains two static cards in a fixed shallow V aligned to a branch from the complete
 procedural graph. The optimized wood mesh may omit that branch; its lightweight anchor still drives
 foliage placement. Thirty clusters therefore create 60 quad cards, approximately 120 triangles,
-one foliage object, and one material.
+one foliage object, and one material. Each pair deterministically chooses one of the four variants,
+and both planes in that pair use the same variant. The per-species collection exists only to keep
+the four editable sources organized; it does not split the generated tree into four objects.
+
+Placement checks the complete branch graph against the final optimized wood. Anchors on physical
+branches are selected first. If the requested count reaches a branch omitted from the wood mesh,
+that branch is filled from its parent connection outward instead of placing its first clump at the
+invisible tip. This changes placement priority only; **Foliage Cluster Count** remains exact.
 
 Refresh replaces only the selected tree's combined foliage mesh. It preserves the wood, settings,
-seed, and editable template, and selection may start from either wood or foliage. Trees generated
+seed, and editable templates, and selection may start from either wood or foliage. Trees generated
 before complete-graph anchor persistence was added must be regenerated; the add-on fails explicitly
 instead of falling back to the sparse retained wood endpoints.
 
-The three rotation controls are per tree. Texture rotation keeps the full image visible with clipped
-sampling and a fitted rotated UV square; Card Pair Rotation rolls each shallow-V pair around its
-virtual branch; Canopy Rotation turns all foliage around the tree-local vertical axis.
-
-The initial template uses one full-range texture. Atlas/texture-bible region selection, wind, and
-automatic LOD generation remain later stages and do not require changing anchor extraction.
+The three rotation controls are per tree. Texture Rotation transforms UVs inside each selected
+quadrant and cannot sample a neighboring atlas slot; Card Pair Rotation rolls each shallow-V pair
+around its virtual branch; Canopy Rotation turns all foliage around the tree-local vertical axis.
+Wind and automatic LOD generation remain later stages and do not require changing anchor extraction.
 
 ### Node Editor (Full Control)
 1. Open a **Node Editor** and select **Mtree** from the tree type dropdown

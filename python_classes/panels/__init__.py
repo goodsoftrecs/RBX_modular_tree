@@ -56,14 +56,17 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
 
         canopy_box = layout.box()
         canopy_box.label(text="Foliage Cards", icon="OUTLINER_OB_MESH")
+        canopy_box.prop(context.scene, "mtree_foliage_library_set_id")
         canopy_box.operator(
-            "mtree.create_foliage_card_template", text="Create Foliage Card Template"
+            "mtree.create_foliage_card_template", text="Initialize / Repair Foliage Set"
         )
 
         wood = find_wood_for_object(context.active_object)
         if wood is not None:
+            canopy_box.prop(wood, "mtree_foliage_set_id")
             canopy_box.prop(wood, "mtree_foliage_cluster_count")
             canopy_box.prop(wood, "mtree_foliage_card_scale")
+            canopy_box.prop(wood, "mtree_foliage_branch_distance")
             canopy_box.prop(wood, "mtree_foliage_texture_rotation")
             canopy_box.prop(wood, "mtree_foliage_pair_rotation")
             canopy_box.prop(wood, "mtree_foliage_canopy_rotation")

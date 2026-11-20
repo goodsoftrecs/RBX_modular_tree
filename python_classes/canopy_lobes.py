@@ -21,6 +21,8 @@ TEMPLATE_NAMES = ("Canopy_Round", "Canopy_Wide", "Canopy_Tip")
 ROLE_KEY = "mtree_role"
 TREE_ID_KEY = "mtree_tree_id"
 SEED_KEY = "mtree_generation_seed"
+TREE_SPECIES_KEY = "mtree_tree_species"
+TREE_NUMBER_KEY = "mtree_tree_number"
 ROLE_ROOT = "ROOT"
 ROLE_WOOD = "WOOD"
 ROLE_FOLIAGE = "FOLIAGE"
@@ -167,6 +169,30 @@ def _parse_seed(name: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+def _species_display_name(label: str) -> str:
+    display_name = re.sub(r"[^A-Za-z0-9]+", "_", str(label)).strip("_")
+    return display_name or "Tree"
+
+
+def _next_species_tree_number(
+    generated_root: bpy.types.Collection, species_id: str, display_name: str
+) -> int:
+    existing_numbers = [
+        int(collection.get(TREE_NUMBER_KEY))
+        for collection in generated_root.children
+        if collection.get(TREE_SPECIES_KEY) == species_id
+        and int(collection.get(TREE_NUMBER_KEY, 0)) > 0
+    ]
+    number = max(existing_numbers, default=0) + 1
+    while (
+        bpy.data.collections.get(f"{display_name}_{number}") is not None
+        or bpy.data.objects.get(f"{display_name}_{number}_Root") is not None
+        or bpy.data.objects.get(f"{display_name}_{number}_Wood") is not None
+    ):
+        number += 1
+    return number
+
+
 def _is_tree_mesh(obj: bpy.types.Object | None) -> bool:
     return bool(
         obj
@@ -208,7 +234,12 @@ def find_wood_for_object(obj: bpy.types.Object | None) -> bpy.types.Object | Non
     return None
 
 
-def organize_tree_object(wood: bpy.types.Object, generation_seed: int | None = None) -> bpy.types.Object:
+def organize_tree_object(
+    wood: bpy.types.Object,
+    generation_seed: int | None = None,
+    species_id: str | None = None,
+    species_label: str | None = None,
+) -> bpy.types.Object:
     """Add stable ownership and move a generated or legacy wood mesh into its tree collection."""
 
     if not _is_tree_mesh(wood):
@@ -219,16 +250,34 @@ def organize_tree_object(wood: bpy.types.Object, generation_seed: int | None = N
     seed = int(generation_seed if generation_seed is not None else _parse_seed(wood.name))
     tree_id = str(uuid.uuid4())
     generated_root = _get_or_create_top_collection(GENERATED_TREES_NAME)
-    tree_collection = bpy.data.collections.new(f"Tree_{seed:04d}")
+    tree_number = None
+    if species_id is not None:
+        normalized_species = str(species_id).upper()
+        display_name = _species_display_name(species_label or normalized_species.title())
+        tree_number = _next_species_tree_number(
+            generated_root, normalized_species, display_name
+        )
+        collection_name = f"{display_name}_{tree_number}"
+    else:
+        normalized_species = None
+        collection_name = f"Tree_{seed:04d}"
+
+    tree_collection = bpy.data.collections.new(collection_name)
     generated_root.children.link(tree_collection)
     tree_collection[TREE_ID_KEY] = tree_id
     tree_collection[SEED_KEY] = seed
+    if normalized_species is not None and tree_number is not None:
+        tree_collection[TREE_SPECIES_KEY] = normalized_species
+        tree_collection[TREE_NUMBER_KEY] = tree_number
 
     root = bpy.data.objects.new(f"{tree_collection.name}_Root", None)
     tree_collection.objects.link(root)
     root[ROLE_KEY] = ROLE_ROOT
     root[TREE_ID_KEY] = tree_id
     root[SEED_KEY] = seed
+    if normalized_species is not None and tree_number is not None:
+        root[TREE_SPECIES_KEY] = normalized_species
+        root[TREE_NUMBER_KEY] = tree_number
 
     if wood.name not in tree_collection.objects:
         tree_collection.objects.link(wood)
@@ -240,6 +289,9 @@ def organize_tree_object(wood: bpy.types.Object, generation_seed: int | None = N
     wood[ROLE_KEY] = ROLE_WOOD
     wood[TREE_ID_KEY] = tree_id
     wood[SEED_KEY] = seed
+    if normalized_species is not None and tree_number is not None:
+        wood[TREE_SPECIES_KEY] = normalized_species
+        wood[TREE_NUMBER_KEY] = tree_number
     wood.parent = root
     wood.mtree_lobe_count = 8
     wood.mtree_lobe_scale = 1.0
@@ -247,6 +299,7 @@ def organize_tree_object(wood: bpy.types.Object, generation_seed: int | None = N
     if hasattr(wood, "mtree_foliage_cluster_count"):
         wood.mtree_foliage_cluster_count = 30
         wood.mtree_foliage_card_scale = 1.0
+        wood.mtree_foliage_branch_distance = 0.0
         wood.mtree_foliage_texture_rotation = 0.0
         wood.mtree_foliage_pair_rotation = 0.0
         wood.mtree_foliage_canopy_rotation = 0.0
@@ -371,6 +424,9 @@ def refresh_canopy_for_object(active_object: bpy.types.Object | None) -> tuple[b
     foliage[ROLE_KEY] = ROLE_FOLIAGE
     foliage[TREE_ID_KEY] = tree_id
     foliage[SEED_KEY] = int(wood.mtree_canopy_seed)
+    if wood.get(TREE_SPECIES_KEY):
+        foliage[TREE_SPECIES_KEY] = wood[TREE_SPECIES_KEY]
+        foliage[TREE_NUMBER_KEY] = int(wood[TREE_NUMBER_KEY])
     foliage["mtree_lobe_count"] = len(placements)
 
     old_foliage = [
