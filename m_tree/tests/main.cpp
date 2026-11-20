@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -154,9 +155,22 @@ TEST(foliage_anchors_are_deterministic_and_independent_of_mesh_pruning)
 		ASSERT_EQ(lhs.hierarchy_depth, rhs.hierarchy_depth);
 		ASSERT_EQ(lhs.branch_id, rhs.branch_id);
 		ASSERT_TRUE(std::abs(lhs.branch_progress - rhs.branch_progress) < 1e-6f);
-		ASSERT_TRUE(lhs.branch_progress > 0.0f && lhs.branch_progress <= 1.0f);
+		ASSERT_TRUE(lhs.branch_progress >= 0.0f && lhs.branch_progress <= 1.0f);
 		maximum_anchor_depth = std::max(maximum_anchor_depth, lhs.hierarchy_depth);
 	}
+
+	std::set<int> side_branch_ids;
+	std::set<int> junction_anchor_ids;
+	for (const auto& anchor : first)
+	{
+		if (anchor.hierarchy_depth <= 0)
+			continue;
+		side_branch_ids.insert(anchor.branch_id);
+		if (std::abs(anchor.branch_progress) < 1e-6f)
+			junction_anchor_ids.insert(anchor.branch_id);
+	}
+	ASSERT_GT(static_cast<int>(side_branch_ids.size()), 0);
+	ASSERT_EQ(side_branch_ids.size(), junction_anchor_ids.size());
 
 	ManifoldMesher pruned_mesher;
 	pruned_mesher.radial_resolution = 8;

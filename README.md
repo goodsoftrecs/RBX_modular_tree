@@ -105,13 +105,15 @@ the four editable sources organized; it does not split the generated tree into f
 
 Placement checks the complete branch graph against the final optimized wood. Anchors on physical
 branches are selected first. If the requested count reaches a branch omitted from the wood mesh,
-that branch is filled from its parent connection outward instead of placing its first clump at the
-invisible tip. This changes placement priority only; **Foliage Cluster Count** remains exact.
+that branch is filled from an explicit progress-zero parent-junction anchor outward instead of
+placing its first clump at the end of the invisible branch's first segment. This changes placement
+priority only; **Foliage Cluster Count** remains exact.
 
 Refresh replaces only the selected tree's combined foliage mesh. It preserves the wood, settings,
 seed, and editable templates, and selection may start from either wood or foliage. Trees generated
-before complete-graph anchor persistence was added must be regenerated; the add-on fails explicitly
-instead of falling back to the sparse retained wood endpoints.
+before complete-graph anchor persistence or progress-zero junction anchors were added must be
+regenerated; the add-on fails explicitly instead of falling back to stale or sparse anchor data.
+Refreshing foliage alone cannot add missing junction anchors to an existing tree.
 
 The three rotation controls are per tree. Texture Rotation transforms UVs inside each selected
 quadrant and cannot sample a neighboring atlas slot; Card Pair Rotation rolls each shallow-V pair

@@ -83,9 +83,11 @@ def setup_addon_directory():
         elif f in (ADDON_SOURCE_DIRNAME, RESOURCES_DIRNAME):
             shutil.copytree(os.path.join(".", f), os.path.join(root, f), ignore=ignore_patterns)
 
-    # Copy wheels from downloaded artifacts
+    # Copy only wheels for the current release. Older local wheels may remain cached.
     wheel_files = []
-    for whl in glob.glob("wheels/**/*.whl", recursive=True):
+    wheel_version = read_version().replace("_", ".")
+    wheel_pattern = f"wheels/**/m_tree-{wheel_version}-*.whl"
+    for whl in glob.glob(wheel_pattern, recursive=True):
         shutil.copy2(whl, wheels_dir)
         wheel_files.append(f"./wheels/{os.path.basename(whl)}")
         print(f"Copied wheel: {whl}")

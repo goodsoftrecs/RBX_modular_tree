@@ -11,7 +11,7 @@ from typing import Iterable
 
 
 ANCHOR_PAYLOAD_KEY = "mtree_foliage_anchor_payload"
-ANCHOR_PAYLOAD_SCHEMA = 1
+ANCHOR_PAYLOAD_SCHEMA = 2
 _PAYLOAD_PREFIX = "zlib-json-v1:"
 _MAX_ANCHORS = 250_000
 

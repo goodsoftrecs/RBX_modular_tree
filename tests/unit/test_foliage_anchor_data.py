@@ -1,5 +1,9 @@
 """Tests for versioned, Blender-independent foliage anchor persistence."""
 
+import base64
+import json
+import zlib
+
 import pytest
 
 from foliage_anchor_data import FoliageAnchor, decode_anchor_payload, encode_anchor_payload
@@ -30,3 +34,15 @@ def test_non_finite_anchor_values_are_rejected():
 
     with pytest.raises(ValueError, match="finite"):
         encode_anchor_payload([invalid])
+
+
+def test_pre_junction_anchor_schema_requires_tree_regeneration():
+    prefix, encoded_document = encode_anchor_payload(_anchors()).split(":", 1)
+    document = json.loads(zlib.decompress(base64.b64decode(encoded_document)))
+    document["schemaVersion"] = 1
+    stale_payload = prefix + ":" + base64.b64encode(
+        zlib.compress(json.dumps(document, separators=(",", ":")).encode("utf-8"))
+    ).decode("ascii")
+
+    with pytest.raises(ValueError, match="unsupported schema"):
+        decode_anchor_payload(stale_payload)

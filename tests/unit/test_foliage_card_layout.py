@@ -81,7 +81,7 @@ def test_physical_branches_precede_missing_branches_then_missing_runs_outward():
         FoliageAnchor((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.5, 0, 0, 1.0),
         FoliageAnchor((1.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.12, 1, 1, 0.5),
         FoliageAnchor((2.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.08, 1, 1, 1.0),
-        FoliageAnchor((0.2, 0.0, 2.0), (0.0, 1.0, 0.0), 0.18, 2, 2, 0.05),
+        FoliageAnchor((0.2, 0.0, 2.0), (0.0, 1.0, 0.0), 0.18, 2, 2, 0.0),
         FoliageAnchor((0.2, 1.0, 2.0), (0.0, 1.0, 0.0), 0.10, 2, 2, 0.5),
         FoliageAnchor((0.2, 2.0, 2.0), (0.0, 1.0, 0.0), 0.05, 2, 2, 1.0),
     ]
@@ -97,7 +97,7 @@ def test_physical_branches_precede_missing_branches_then_missing_runs_outward():
     assert all(anchors[index].branch_id == 1 for index in selected[:2])
     missing_progress = [anchors[index].branch_progress for index in selected[2:]]
     assert missing_progress == sorted(missing_progress)
-    assert missing_progress[0] == 0.05
+    assert missing_progress[0] == 0.0
 
 
 def test_trunk_and_thick_branch_bases_are_ineligible():

@@ -59,6 +59,14 @@ void extract_branch(const Node& node, const Vector3& node_position, const int br
 		const NodeChild& child = *node.children[index];
 		const Vector3 child_position = get_side_child_position(node, child, node_position);
 		const int child_branch_id = next_branch_id++;
+		anchors.push_back(FoliageAnchor{
+		    .position = child_position,
+		    .direction = child.node.direction,
+		    .radius = child.node.radius,
+		    .hierarchy_depth = hierarchy_depth + 1,
+		    .branch_id = child_branch_id,
+		    .branch_progress = 0.0f,
+		});
 		extract_branch(child.node, child_position, child_branch_id, hierarchy_depth + 1, 0.0f,
 		               calculate_branch_length(child.node), next_branch_id, anchors);
 	}
@@ -80,4 +88,3 @@ std::vector<FoliageAnchor> extract_foliage_anchors(Tree& tree)
 }
 
 } // namespace Mtree
-
