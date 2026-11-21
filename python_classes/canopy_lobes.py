@@ -298,6 +298,7 @@ def organize_tree_object(
     wood.mtree_canopy_seed = seed
     if hasattr(wood, "mtree_foliage_cluster_count"):
         wood.mtree_foliage_cluster_count = 30
+        wood.mtree_foliage_top_tip_pairs = 0
         wood.mtree_foliage_card_scale = 1.0
         wood.mtree_foliage_branch_spacing = 1.0
         wood.mtree_foliage_branch_card_length = 1.5

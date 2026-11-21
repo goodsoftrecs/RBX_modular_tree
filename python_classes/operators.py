@@ -20,6 +20,7 @@ from .foliage_anchor_data import (
 )
 from .foliage_cards import (
     default_foliage_branch_layers,
+    default_foliage_top_tip_pairs,
     default_tree_foliage_set_id,
     ensure_foliage_card_set,
     refresh_foliage_cards_for_object,
@@ -223,6 +224,9 @@ class QuickGenerateTree(bpy.types.Operator):
                 self.preset, context.scene.mtree_foliage_library_set_id
             )
             tree_object.mtree_foliage_branch_layers = default_foliage_branch_layers(
+                self.preset
+            )
+            tree_object.mtree_foliage_top_tip_pairs = default_foliage_top_tip_pairs(
                 self.preset
             )
             for field_name in (

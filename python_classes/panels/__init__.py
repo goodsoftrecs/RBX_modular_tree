@@ -65,6 +65,7 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
         if wood is not None:
             canopy_box.prop(wood, "mtree_foliage_set_id")
             canopy_box.prop(wood, "mtree_foliage_cluster_count")
+            canopy_box.prop(wood, "mtree_foliage_top_tip_pairs")
             canopy_box.prop(wood, "mtree_foliage_card_scale")
             canopy_box.prop(wood, "mtree_foliage_branch_layers")
             primary_length_row = canopy_box.row()

@@ -396,6 +396,94 @@ def test_secondary_only_mode_excludes_primary_branch_anchors():
     )
 
 
+def test_top_tip_pair_uses_highest_terminal_trunk_anchor_before_branch_clusters():
+    anchors = _anchors()
+    anchors.extend(
+        (
+            FoliageAnchor(
+                (2.0, 0.0, 8.0),
+                (0.0, 0.0, 1.0),
+                0.4,
+                0,
+                90,
+                0.5,
+            ),
+            FoliageAnchor(
+                (2.0, 0.0, 12.0),
+                (0.0, 0.0, 1.0),
+                0.2,
+                0,
+                90,
+                1.0,
+            ),
+        )
+    )
+
+    layout = build_card_layout(
+        anchors,
+        cluster_count=4,
+        scale_multiplier=1.0,
+        seed=17,
+        top_tip_pairs=1,
+    )
+    selected = [layout[index].anchor_index for index in range(0, len(layout), 2)]
+
+    assert len(layout) == 8
+    assert selected[0] == len(anchors) - 1
+    assert anchors[selected[0]].hierarchy_depth == 0
+    assert all(anchors[index].hierarchy_depth >= 2 for index in selected[1:])
+
+
+def test_two_top_tip_pairs_share_attachment_and_second_is_rolled_ninety_degrees():
+    layout = build_card_layout(
+        _anchors(),
+        cluster_count=4,
+        scale_multiplier=1.0,
+        seed=91,
+        top_tip_pairs=2,
+        branch_card_length=2.25,
+        length_variation=0.25,
+    )
+    first_pair = layout[0:2]
+    second_pair = layout[2:4]
+
+    assert first_pair[0].anchor_index == second_pair[0].anchor_index
+    assert first_pair[0].position == second_pair[0].position
+    assert first_pair[0].length_scale == first_pair[1].length_scale
+    assert second_pair[0].length_scale == second_pair[1].length_scale
+    assert 1.6875 <= first_pair[0].length_scale <= 2.8125
+    assert 1.6875 <= second_pair[0].length_scale <= 2.8125
+    assert _dot(first_pair[0].normal, second_pair[0].normal) == pytest.approx(
+        0.0, abs=1e-6
+    )
+    for pair in (first_pair, second_pair):
+        angle = math.degrees(
+            math.acos(max(-1.0, min(1.0, _dot(pair[0].normal, pair[1].normal))))
+        )
+        assert angle == pytest.approx(55.0)
+
+
+def test_top_tip_pairs_are_inside_exact_count_and_zero_disables_them():
+    disabled = build_card_layout(
+        _anchors(),
+        cluster_count=1,
+        scale_multiplier=1.0,
+        seed=3,
+        top_tip_pairs=0,
+    )
+    clamped = build_card_layout(
+        _anchors(),
+        cluster_count=1,
+        scale_multiplier=1.0,
+        seed=3,
+        top_tip_pairs=2,
+    )
+
+    assert len(disabled) == len(clamped) == 2
+    assert _anchors()[disabled[0].anchor_index].hierarchy_depth >= 2
+    assert _anchors()[clamped[0].anchor_index].hierarchy_depth == 0
+
+
 def test_texture_rotation_expands_sampling_uvs_for_clipped_fit():
     corners = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
 
@@ -524,6 +612,14 @@ def test_invalid_layout_inputs_fail_explicitly():
             scale_multiplier=1.0,
             seed=0,
             length_variation=0.51,
+        )
+    with pytest.raises(ValueError, match="Top Tip Pairs"):
+        build_card_layout(
+            _anchors(),
+            cluster_count=1,
+            scale_multiplier=1.0,
+            seed=0,
+            top_tip_pairs=3,
         )
     with pytest.raises(ValueError, match="Texture rotation"):
         rotate_uv_to_fit((0.0, 0.0), float("inf"))

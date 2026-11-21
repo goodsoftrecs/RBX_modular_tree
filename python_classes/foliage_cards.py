@@ -186,6 +186,12 @@ def default_foliage_branch_layers(species_id: str | None) -> str:
     )
 
 
+def default_foliage_top_tip_pairs(species_id: str | None) -> int:
+    """Return one terminal leader pair for conifers and none for broadleaf trees."""
+
+    return 1 if str(species_id or "").upper() in CONIFER_PRIMARY_SPECIES else 0
+
+
 def ensure_foliage_branch_layers_default(wood: bpy.types.Object) -> str:
     """Migrate an existing tree only when the artist has never set the control."""
 
@@ -195,6 +201,17 @@ def ensure_foliage_branch_layers_default(wood: bpy.types.Object) -> str:
             wood.get(TREE_SPECIES_KEY)
         )
     return str(wood.mtree_foliage_branch_layers)
+
+
+def ensure_foliage_top_tip_pairs_default(wood: bpy.types.Object) -> int:
+    """Migrate an existing tree only when the artist has never set the control."""
+
+    property_name = "mtree_foliage_top_tip_pairs"
+    if not wood.is_property_set(property_name):
+        wood.mtree_foliage_top_tip_pairs = default_foliage_top_tip_pairs(
+            wood.get(TREE_SPECIES_KEY)
+        )
+    return int(wood.mtree_foliage_top_tip_pairs)
 
 
 def _set_id_from_context(context: bpy.types.Context) -> str:
@@ -638,6 +655,7 @@ def refresh_foliage_cards_for_object(
     anchors = load_anchor_payload(wood)
     missing_branch_ids = _missing_branch_ids_for_wood(wood, anchors)
     branch_layers = ensure_foliage_branch_layers_default(wood)
+    top_tip_pairs = ensure_foliage_top_tip_pairs_default(wood)
     placements = build_card_layout(
         anchors,
         cluster_count=int(wood.mtree_foliage_cluster_count),
@@ -654,6 +672,7 @@ def refresh_foliage_cards_for_object(
         include_primary_connections=(
             branch_layers == BRANCH_LAYERS_PRIMARY_SECONDARY
         ),
+        top_tip_pairs=top_tip_pairs,
     )
     placements = rotate_card_layout_about_z(
         placements, float(wood.mtree_foliage_canopy_rotation)
@@ -705,6 +724,10 @@ def refresh_foliage_cards_for_object(
         wood.mtree_foliage_primary_card_length
     )
     foliage["mtree_foliage_branch_layers"] = branch_layers
+    foliage["mtree_foliage_top_tip_pairs"] = top_tip_pairs
+    foliage["mtree_foliage_top_tip_clusters"] = sum(
+        placements[index].is_top_tip for index in range(0, len(placements), 2)
+    )
     foliage["mtree_foliage_length_variation"] = float(
         wood.mtree_foliage_length_variation
     )
@@ -768,6 +791,15 @@ def register_properties() -> None:
         default=30,
         min=1,
         max=512,
+    )
+    bpy.types.Object.mtree_foliage_top_tip_pairs = bpy.props.IntProperty(
+        name="Top Tip Pairs",
+        description=(
+            "Foliage pairs reserved inside the exact cluster count at the terminal trunk tip"
+        ),
+        default=0,
+        min=0,
+        max=2,
     )
     bpy.types.Object.mtree_foliage_card_scale = bpy.props.FloatProperty(
         name="Card Scale",
@@ -870,6 +902,7 @@ def unregister_properties() -> None:
         "mtree_foliage_branch_card_length",
         "mtree_foliage_branch_spacing",
         "mtree_foliage_card_scale",
+        "mtree_foliage_top_tip_pairs",
         "mtree_foliage_cluster_count",
         "mtree_foliage_set_id",
     ):

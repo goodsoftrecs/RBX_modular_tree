@@ -31,6 +31,7 @@ class CardPlacement:
     scale: float
     length_scale: float = 1.0
     template_slot: int = 1
+    is_top_tip: bool = False
 
 
 def _length(vector: tuple[float, float, float]) -> float:
@@ -629,6 +630,35 @@ def _stable_normal(
     return _normalize(_rotate_about_axis(normal, direction, roll))
 
 
+def terminal_trunk_anchor_index(anchors: list[FoliageAnchor]) -> int:
+    """Return the highest deterministic terminal anchor from the depth-zero trunk."""
+
+    validated = [validate_anchor(anchor) for anchor in anchors]
+    trunk_branches: dict[int, list[int]] = {}
+    for index, anchor in enumerate(validated):
+        if anchor.hierarchy_depth == 0:
+            trunk_branches.setdefault(anchor.branch_id, []).append(index)
+    if not trunk_branches:
+        raise ValueError("Complete tree graph has no trunk anchors for Top Tip Pairs")
+
+    terminals = [
+        max(
+            indices,
+            key=lambda index: (validated[index].branch_progress, -index),
+        )
+        for _, indices in sorted(trunk_branches.items())
+    ]
+    return max(
+        terminals,
+        key=lambda index: (
+            validated[index].position[2],
+            validated[index].branch_progress,
+            -validated[index].branch_id,
+            -index,
+        ),
+    )
+
+
 def build_card_layout(
     anchors: list[FoliageAnchor],
     cluster_count: int,
@@ -644,6 +674,7 @@ def build_card_layout(
     primary_card_length: float = 2.0,
     length_variation: float = 0.0,
     include_primary_connections: bool = False,
+    top_tip_pairs: int = 0,
 ) -> list[CardPlacement]:
     """Return exactly two branch-aligned cards for every requested cluster."""
 
@@ -667,6 +698,8 @@ def build_card_layout(
         raise ValueError("Primary Card Length must be between 0.5x and 4.0x")
     if not math.isfinite(length_variation) or not 0.0 <= length_variation <= 0.5:
         raise ValueError("Length Variation must be between 0% and 50%")
+    if not isinstance(top_tip_pairs, int) or not 0 <= top_tip_pairs <= 2:
+        raise ValueError("Top Tip Pairs must be an integer between 0 and 2")
 
     validated = [validate_anchor(anchor) for anchor in anchors]
     eligible = foliage_branch_candidate_indices(
@@ -677,14 +710,23 @@ def build_card_layout(
     base_scale = _base_scale(validated, eligible) * scale_multiplier
     minimum_spacing = base_scale * template_footprint * branch_spacing
     selection_rng = random.Random(int(seed) ^ 0x4C957F2D)
-    selected = select_anchor_indices_with_branch_priority(
-        validated,
-        eligible,
-        cluster_count,
-        selection_rng,
-        missing_branch_ids,
-        minimum_spacing,
+    reserved_tip_count = min(top_tip_pairs, cluster_count)
+    terminal_index = (
+        terminal_trunk_anchor_index(validated) if reserved_tip_count else None
     )
+    selected = [terminal_index] * reserved_tip_count
+    remaining_count = cluster_count - reserved_tip_count
+    if remaining_count:
+        selected.extend(
+            select_anchor_indices_with_branch_priority(
+                validated,
+                eligible,
+                remaining_count,
+                selection_rng,
+                missing_branch_ids,
+                minimum_spacing,
+            )
+        )
     assigned_slots = _template_slots_for_clusters(cluster_count, template_slots, seed)
     half_angle = math.radians(v_angle_degrees) * 0.5
     appearance_rng = random.Random(int(seed) ^ 0xA341316C)
@@ -693,25 +735,36 @@ def build_card_layout(
     placements: list[CardPlacement] = []
     repetitions: dict[int, int] = {}
     for cluster_index, anchor_index in enumerate(selected):
+        if anchor_index is None:  # Narrow the reserved-tip Optional for type checkers.
+            raise ValueError("Top Tip Pairs could not resolve a terminal trunk anchor")
         anchor = validated[anchor_index]
         direction = _normalize(anchor.direction)
-        base_normal = _stable_normal(
-            direction, appearance_rng.uniform(-math.pi, math.pi)
-        )
-        normal = _normalize(
-            _rotate_about_axis(base_normal, direction, pair_rotation_radians)
-        )
-        repetition = repetitions.get(anchor_index, 0)
-        repetitions[anchor_index] = repetition + 1
-        jitter_scale = base_scale * 0.18 * repetition
-        jitter_angle = appearance_rng.uniform(-math.pi, math.pi)
-        side = _normalize(_cross(base_normal, direction))
-        position = tuple(
-            anchor.position[axis]
-            + side[axis] * math.cos(jitter_angle) * jitter_scale
-            + base_normal[axis] * math.sin(jitter_angle) * jitter_scale
-            for axis in range(3)
-        )
+        is_top_tip = cluster_index < reserved_tip_count
+        if is_top_tip:
+            tip_roll = cluster_index * math.pi * 0.5
+            base_normal = _stable_normal(
+                direction, pair_rotation_radians + tip_roll
+            )
+            normal = base_normal
+            position = anchor.position
+        else:
+            base_normal = _stable_normal(
+                direction, appearance_rng.uniform(-math.pi, math.pi)
+            )
+            normal = _normalize(
+                _rotate_about_axis(base_normal, direction, pair_rotation_radians)
+            )
+            repetition = repetitions.get(anchor_index, 0)
+            repetitions[anchor_index] = repetition + 1
+            jitter_scale = base_scale * 0.18 * repetition
+            jitter_angle = appearance_rng.uniform(-math.pi, math.pi)
+            side = _normalize(_cross(base_normal, direction))
+            position = tuple(
+                anchor.position[axis]
+                + side[axis] * math.cos(jitter_angle) * jitter_scale
+                + base_normal[axis] * math.sin(jitter_angle) * jitter_scale
+                for axis in range(3)
+            )
         varied_scale = base_scale * appearance_rng.uniform(0.88, 1.12)
         base_length = (
             primary_card_length
@@ -735,6 +788,7 @@ def build_card_layout(
                     scale=varied_scale,
                     length_scale=effective_length,
                     template_slot=assigned_slots[cluster_index],
+                    is_top_tip=is_top_tip,
                 )
             )
     return placements

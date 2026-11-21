@@ -31,6 +31,9 @@ try:
     profiles = importlib.import_module(
         f"{repo_root.name}.python_classes.game_output_profiles"
     )
+    foliage_cards = importlib.import_module(
+        f"{repo_root.name}.python_classes.foliage_cards"
+    )
 
     settings = bpy.context.scene.mtree_quick_generate_settings
     assert settings.preset == "OAK"
@@ -125,7 +128,14 @@ try:
     assert math.isclose(wood.get("mtree_branch_density"), 0.8, abs_tol=1e-6)
     assert wood.mtree_foliage_set_id == "CEDAR"
     assert wood.mtree_foliage_branch_layers == "PRIMARY_SECONDARY"
+    assert wood.mtree_foliage_top_tip_pairs == 1
     assert math.isclose(wood.mtree_foliage_primary_card_length, 2.0, abs_tol=1e-6)
+    wood.property_unset("mtree_foliage_top_tip_pairs")
+    assert not wood.is_property_set("mtree_foliage_top_tip_pairs")
+    assert foliage_cards.ensure_foliage_top_tip_pairs_default(wood) == 1
+    wood.mtree_foliage_top_tip_pairs = 0
+    assert foliage_cards.ensure_foliage_top_tip_pairs_default(wood) == 0
+    wood.mtree_foliage_top_tip_pairs = 1
     print("SIDEBAR_GENERATION_OK", flush=True)
 
     assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
@@ -137,6 +147,8 @@ try:
     )
     assert foliage.get("mtree_foliage_card_count") == 60
     assert foliage.get("mtree_foliage_branch_layers") == "PRIMARY_SECONDARY"
+    assert foliage.get("mtree_foliage_top_tip_pairs") == 1
+    assert foliage.get("mtree_foliage_top_tip_clusters") == 1
     assert math.isclose(
         foliage.get("mtree_foliage_primary_card_length"), 2.0, abs_tol=1e-6
     )

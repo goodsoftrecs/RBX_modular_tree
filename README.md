@@ -81,8 +81,8 @@ rings; density and secondary branches are the controls most likely to increase t
 5. Generate a tree with **Add Legacy Leaves** disabled (the default), then select its wood object.
    A matching initialized species set is selected automatically; **Tree Foliage Set** can override
    it.
-6. Adjust exact **Foliage Cluster Count** (up to `512`), **Card Scale** (up to `12x`),
-   **Branch Start Layers**, **Primary Card Length** (`0.5x` to `4.0x`), **Branch Card Length**
+6. Adjust exact **Foliage Cluster Count** (up to `512`), **Top Tip Pairs** (`0` to `2`),
+   **Card Scale** (up to `12x`), **Branch Start Layers**, **Primary Card Length** (`0.5x` to `4.0x`), **Branch Card Length**
    (`0.5x` to `3.0x`), **Length Variation** (`0%` to `50%`), **Branch Spacing** (`0.1x` to
    `3.0x`), signed **Branch Distance**, rotations, or **Foliage Seed**.
 7. Click **Generate / Refresh Foliage Cards**.
@@ -113,6 +113,13 @@ use secondary connections only or include the primary connections where major li
 trunk. Pine, Cedar, Sequoia, and Hemlock default to **Primary + Secondary**; broadleaf presets
 default to **Secondary Only**. Every selected branch receives its connection anchor first, and
 additional requested clusters advance outward.
+
+**Top Tip Pairs** reserves zero, one, or two clusters at the highest terminal trunk anchor before
+that branch order is filled. Pine, Cedar, Sequoia, and Hemlock default to one tip pair; broadleaf
+presets default to zero. A second tip pair shares the exact pinned attachment and is rolled 90
+degrees around the terminal leader. These pairs count inside **Foliage Cluster Count**, so a count
+of 30 with one tip pair produces one apex cluster plus 29 branch clusters, not 31 total clusters.
+Tip cards reuse **Branch Card Length** and **Length Variation**.
 
 **Primary Card Length** controls trunk-origin cards independently and defaults to `2.0x`.
 **Branch Card Length** controls secondary cards and defaults to `1.5x`. Both scale only the authored

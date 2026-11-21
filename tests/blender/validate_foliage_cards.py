@@ -194,6 +194,7 @@ try:
     assert wood.mtree_foliage_seed == 538
     assert wood.mtree_foliage_set_id == "OAK"
     assert wood.mtree_foliage_cluster_count == 30
+    assert wood.mtree_foliage_top_tip_pairs == 0
     assert wood.mtree_foliage_branch_spacing == 1.0
     assert wood.mtree_foliage_branch_layers == "SECONDARY_ONLY"
     assert wood.mtree_foliage_primary_card_length == 2.0
@@ -210,6 +211,14 @@ try:
     assert (
         bpy.types.Object.bl_rna.properties["mtree_foliage_cluster_count"].hard_max
         == 512
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_top_tip_pairs"].hard_min
+        == 0
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_top_tip_pairs"].hard_max
+        == 2
     )
     assert abs(
         bpy.types.Object.bl_rna.properties["mtree_foliage_branch_spacing"].hard_min
@@ -270,6 +279,7 @@ try:
         primary_card_length=wood.mtree_foliage_primary_card_length,
         length_variation=wood.mtree_foliage_length_variation * 0.01,
         include_primary_connections=False,
+        top_tip_pairs=wood.mtree_foliage_top_tip_pairs,
     )
     initial_cluster_placements = initial_layout[::2]
     assert all(
@@ -305,6 +315,8 @@ try:
     assert foliage.get("mtree_foliage_branch_card_length") == 1.5
     assert foliage.get("mtree_foliage_primary_card_length") == 2.0
     assert foliage.get("mtree_foliage_branch_layers") == "SECONDARY_ONLY"
+    assert foliage.get("mtree_foliage_top_tip_pairs") == 0
+    assert foliage.get("mtree_foliage_top_tip_clusters") == 0
     assert foliage.get("mtree_foliage_length_variation") == 0.0
     missing_branch_count = foliage.get("mtree_foliage_missing_branch_count")
     missing_branch_clusters = foliage.get("mtree_foliage_missing_branch_clusters")
