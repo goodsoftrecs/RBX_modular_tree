@@ -14,6 +14,7 @@ except ImportError:  # Pure unit tests import this module outside the Blender pa
 
 
 DEFAULT_V_ANGLE_DEGREES = 55.0
+DEFAULT_SCALE_REFERENCE_CLUSTERS = 30
 
 
 @dataclass(frozen=True)
@@ -245,7 +246,7 @@ def classify_missing_branch_ids(
 
 def _anchor_scores(
     anchors: list[FoliageAnchor], eligible: list[int]
-) -> tuple[dict[int, float], float]:
+) -> dict[int, float]:
     positions = [anchors[index].position for index in eligible]
     center = tuple(
         sum(position[axis] for position in positions) / len(positions) for axis in range(3)
@@ -269,49 +270,50 @@ def _anchor_scores(
             + 0.25 * anchor.branch_progress
             + 0.20 * outward_score
         )
-    crown_extent = max(
-        math.sqrt(_distance_squared(first, second))
-        for first in positions
-        for second in positions
-    )
-    return scores, max(crown_extent, 1e-6)
+    return scores
 
 
-def _select_anchor_indices(
+def _select_physical_branch_indices(
     anchors: list[FoliageAnchor], eligible: list[int], count: int, rng: random.Random
 ) -> list[int]:
-    scores, crown_extent = _anchor_scores(anchors, eligible)
-    jitter = {index: rng.random() * 1e-8 for index in eligible}
-    selected = [max(eligible, key=lambda index: scores[index] + jitter[index])]
-    unique_target = min(count, len(eligible))
+    """Consume visible branches round-robin from their tips toward their trunks."""
 
-    while len(selected) < unique_target:
-        remaining = [index for index in eligible if index not in selected]
-        selected.append(
-            max(
-                remaining,
-                key=lambda index: (
-                    0.65
-                    * min(
-                        math.sqrt(
-                            _distance_squared(
-                                anchors[index].position, anchors[chosen].position
-                            )
-                        )
-                        / crown_extent
-                        for chosen in selected
-                    )
-                    + 0.35 * scores[index]
-                    + jitter[index]
-                ),
-            )
+    if count <= 0 or not eligible:
+        return []
+    branches: dict[int, list[int]] = {}
+    for index in eligible:
+        branches.setdefault(anchors[index].branch_id, []).append(index)
+    for indices in branches.values():
+        indices.sort(
+            key=lambda index: (-anchors[index].branch_progress, index)
         )
 
-    if len(selected) < count:
-        repeat_order = selected.copy()
-        rng.shuffle(repeat_order)
-        while len(selected) < count:
-            selected.append(repeat_order[(len(selected) - unique_target) % len(repeat_order)])
+    scores = _anchor_scores(anchors, eligible)
+    branch_jitter = {
+        branch_id: rng.random() * 1e-8 for branch_id in sorted(branches)
+    }
+    branch_order = sorted(
+        branches,
+        key=lambda branch_id: (
+            scores[branches[branch_id][0]] + branch_jitter[branch_id]
+        ),
+        reverse=True,
+    )
+
+    selected: list[int] = []
+    layer = 0
+    while len(selected) < count:
+        added = False
+        for branch_id in branch_order:
+            indices = branches[branch_id]
+            if layer < len(indices):
+                selected.append(indices[layer])
+                added = True
+                if len(selected) == count:
+                    break
+        if not added:
+            break
+        layer += 1
     return selected
 
 
@@ -369,7 +371,9 @@ def select_anchor_indices_with_branch_priority(
     selected: list[int] = []
     physical_count = min(count, len(physical))
     if physical_count:
-        selected.extend(_select_anchor_indices(anchors, physical, physical_count, rng))
+        selected.extend(
+            _select_physical_branch_indices(anchors, physical, physical_count, rng)
+        )
 
     remaining = count - len(selected)
     if remaining and missing:
@@ -387,7 +391,7 @@ def select_anchor_indices_with_branch_priority(
     return selected
 
 
-def _base_scale(anchors: list[FoliageAnchor], eligible: list[int], count: int) -> float:
+def _base_scale(anchors: list[FoliageAnchor], eligible: list[int]) -> float:
     positions = [anchors[index].position for index in eligible]
     extents = [
         max(position[axis] for position in positions)
@@ -395,7 +399,8 @@ def _base_scale(anchors: list[FoliageAnchor], eligible: list[int], count: int) -
         for axis in range(3)
     ]
     crown_width = max(extents[0], extents[1], extents[2] * 0.55, 1.0)
-    return max(0.1, crown_width / max(math.sqrt(count) * 1.7, 1.0))
+    reference_density = math.sqrt(DEFAULT_SCALE_REFERENCE_CLUSTERS) * 1.7
+    return max(0.1, crown_width / reference_density)
 
 
 def _stable_normal(
@@ -431,31 +436,34 @@ def build_card_layout(
 
     validated = [validate_anchor(anchor) for anchor in anchors]
     eligible = eligible_anchor_indices(validated, missing_branch_ids)
-    rng = random.Random(int(seed))
+    selection_rng = random.Random(int(seed) ^ 0x4C957F2D)
     selected = select_anchor_indices_with_branch_priority(
         validated,
         eligible,
         cluster_count,
-        rng,
+        selection_rng,
         missing_branch_ids,
     )
     assigned_slots = _template_slots_for_clusters(cluster_count, template_slots, seed)
-    base_scale = _base_scale(validated, eligible, cluster_count) * scale_multiplier
+    base_scale = _base_scale(validated, eligible) * scale_multiplier
     half_angle = math.radians(v_angle_degrees) * 0.5
+    appearance_rng = random.Random(int(seed) ^ 0xA341316C)
 
     placements: list[CardPlacement] = []
     repetitions: dict[int, int] = {}
     for cluster_index, anchor_index in enumerate(selected):
         anchor = validated[anchor_index]
         direction = _normalize(anchor.direction)
-        base_normal = _stable_normal(direction, rng.uniform(-math.pi, math.pi))
+        base_normal = _stable_normal(
+            direction, appearance_rng.uniform(-math.pi, math.pi)
+        )
         normal = _normalize(
             _rotate_about_axis(base_normal, direction, pair_rotation_radians)
         )
         repetition = repetitions.get(anchor_index, 0)
         repetitions[anchor_index] = repetition + 1
         jitter_scale = base_scale * 0.18 * repetition
-        jitter_angle = rng.uniform(-math.pi, math.pi)
+        jitter_angle = appearance_rng.uniform(-math.pi, math.pi)
         side = _normalize(_cross(base_normal, direction))
         position = tuple(
             anchor.position[axis]
@@ -463,7 +471,7 @@ def build_card_layout(
             + base_normal[axis] * math.sin(jitter_angle) * jitter_scale
             for axis in range(3)
         )
-        varied_scale = base_scale * rng.uniform(0.88, 1.12)
+        varied_scale = base_scale * appearance_rng.uniform(0.88, 1.12)
 
         for card_index, angle in enumerate((-half_angle, half_angle)):
             card_normal = _normalize(_rotate_about_axis(normal, direction, angle))

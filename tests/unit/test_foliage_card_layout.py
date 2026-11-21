@@ -54,6 +54,47 @@ def test_layout_is_deterministic_and_returns_exact_card_count():
     assert {placement.cluster_index for placement in first} == set(range(8))
 
 
+def test_count_increase_is_stable_prefix_and_fills_visible_branches_inward():
+    anchors = []
+    for branch_id, axis in ((1, 0), (2, 1)):
+        for progress in (0.25, 0.5, 0.75, 1.0):
+            position = [0.0, 0.0, 3.0]
+            position[axis] = progress * 4.0
+            direction = [0.0, 0.0, 0.2]
+            direction[axis] = 1.0
+            anchors.append(
+                FoliageAnchor(
+                    tuple(position), tuple(direction), 0.1, 1, branch_id, progress
+                )
+            )
+
+    lower = build_card_layout(
+        anchors,
+        cluster_count=4,
+        scale_multiplier=1.0,
+        seed=538,
+        template_slots=(1, 2, 3, 4),
+    )
+    higher = build_card_layout(
+        anchors,
+        cluster_count=6,
+        scale_multiplier=1.0,
+        seed=538,
+        template_slots=(1, 2, 3, 4),
+    )
+
+    assert higher[: len(lower)] == lower
+    selected = [higher[index].anchor_index for index in range(0, len(higher), 2)]
+    assert [anchors[index].branch_progress for index in selected] == [
+        1.0,
+        1.0,
+        0.75,
+        0.75,
+        0.5,
+        0.5,
+    ]
+
+
 def test_geometric_detection_uses_middle_and_outer_branch_path():
     anchors = [
         FoliageAnchor((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.5, 0, 0, 1.0),

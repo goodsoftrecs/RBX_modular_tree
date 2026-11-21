@@ -224,6 +224,36 @@ try:
     )
     assert [tuple(vertex.co) for vertex in refreshed.data.vertices] == first_vertices
 
+    # Raising count appends branch-layer placements without moving or shrinking prior cards.
+    wood.mtree_foliage_cluster_count = 40
+    bpy.context.view_layer.objects.active = wood
+    wood.select_set(True)
+    refreshed.select_set(False)
+    assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
+    denser = next(
+        obj
+        for obj in bpy.data.objects
+        if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
+    )
+    denser_vertices = [tuple(vertex.co) for vertex in denser.data.vertices]
+    denser_uvs = [tuple(loop.uv) for loop in denser.data.uv_layers.active.data]
+    assert denser.get("mtree_foliage_cluster_count") == 40
+    assert denser.get("mtree_foliage_card_count") == 80
+    assert denser_vertices[: len(first_vertices)] == first_vertices
+    assert denser_uvs[: len(first_uvs)] == first_uvs
+
+    wood.mtree_foliage_cluster_count = 30
+    bpy.context.view_layer.objects.active = wood
+    wood.select_set(True)
+    denser.select_set(False)
+    assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
+    refreshed = next(
+        obj
+        for obj in bpy.data.objects
+        if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
+    )
+    assert [tuple(vertex.co) for vertex in refreshed.data.vertices] == first_vertices
+
     # Template edits affect the next refresh without touching optimized wood.
     templates[0].data.vertices[2].co.x += 0.35
     bpy.context.view_layer.objects.active = wood

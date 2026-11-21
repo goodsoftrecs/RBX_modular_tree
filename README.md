@@ -104,10 +104,13 @@ and both planes in that pair use the same variant. The per-species collection ex
 the four editable sources organized; it does not split the generated tree into four objects.
 
 Placement checks the complete branch graph against the final optimized wood. Anchors on physical
-branches are selected first. If the requested count reaches a branch omitted from the wood mesh,
-that branch is filled from an explicit progress-zero parent-junction anchor outward instead of
-placing its first clump at the end of the invisible branch's first segment. This changes placement
-priority only; **Foliage Cluster Count** remains exact.
+branches are selected first in round-robin progress layers: foliage begins at their tips and added
+clusters move inward toward the trunk. If the requested count reaches a branch omitted from the wood
+mesh, that branch uses the inverse safety order, filling from its explicit progress-zero parent
+junction outward instead of starting at the end of its invisible first segment. **Foliage Cluster
+Count** remains exact and cumulative: raising it preserves existing placements and appends new
+ones. Automatic card size uses the fixed 30-cluster reference density, so raising the count adds
+visible density instead of shrinking every existing card; use **Card Scale** to change their size.
 
 Refresh replaces only the selected tree's combined foliage mesh. It preserves the wood, settings,
 seed, and editable templates, and selection may start from either wood or foliage. Trees generated
