@@ -13,8 +13,13 @@ from .canopy_lobes import (
     organize_tree_object,
     refresh_canopy_for_object,
 )
-from .foliage_anchor_data import anchors_from_native, store_anchor_payload
+from .foliage_anchor_data import (
+    anchors_from_native,
+    store_anchor_payload,
+    store_retained_branch_ids,
+)
 from .foliage_cards import (
+    default_foliage_branch_layers,
     default_tree_foliage_set_id,
     ensure_foliage_card_set,
     refresh_foliage_cards_for_object,
@@ -200,7 +205,7 @@ class QuickGenerateTree(bpy.types.Operator):
             seed = self.seed if self.seed != 0 else randint(0, 10000)
             start_time = time.time()
 
-            cpp_mesh, foliage_anchors = self._generate_tree(seed)
+            cpp_mesh, foliage_anchors, retained_branch_ids = self._generate_tree(seed)
             tree_object = self._create_blender_object(context, cpp_mesh, f"Tree_{seed}")
             preset = TREE_PRESETS.get(self.preset)
             species_label = preset.label if preset is not None else self.preset.title()
@@ -211,10 +216,14 @@ class QuickGenerateTree(bpy.types.Operator):
                 species_label=species_label,
             )
             store_anchor_payload(tree_object, foliage_anchors)
+            store_retained_branch_ids(tree_object, retained_branch_ids, foliage_anchors)
             tree_object["mtree_generation_preset"] = self.preset
             tree_object["mtree_wood_output_profile"] = self.wood_output_profile
             tree_object.mtree_foliage_set_id = default_tree_foliage_set_id(
                 self.preset, context.scene.mtree_foliage_library_set_id
+            )
+            tree_object.mtree_foliage_branch_layers = default_foliage_branch_layers(
+                self.preset
             )
             for field_name in (
                 "overall_size",
@@ -306,7 +315,8 @@ class QuickGenerateTree(bpy.types.Operator):
         mesher.longitudinal_stride = settings.longitudinal_stride
         mesher.max_branch_depth = settings.max_branch_depth
         mesher.minimum_branch_radius_ratio = settings.minimum_branch_radius_ratio
-        return mesher.mesh_tree(tree), foliage_anchors
+        cpp_mesh = mesher.mesh_tree(tree)
+        return cpp_mesh, foliage_anchors, list(mesher.retained_branch_ids)
 
     def _create_blender_object(self, context, cpp_mesh, name: str):
         """Create Blender mesh object from C++ mesh data."""

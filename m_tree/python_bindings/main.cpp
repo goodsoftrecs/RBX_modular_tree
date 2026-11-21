@@ -384,6 +384,10 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("longitudinal_stride", &ManifoldMesher::longitudinal_stride)
         .def_readwrite("max_branch_depth", &ManifoldMesher::max_branch_depth)
         .def_readwrite("minimum_branch_radius_ratio", &ManifoldMesher::minimum_branch_radius_ratio)
+        .def_property_readonly("retained_branch_ids", [](const ManifoldMesher& mesher)
+            {
+                return mesher.retained_branch_ids;
+            })
         .def("mesh_tree", &ManifoldMesher::mesh_tree);
 
 

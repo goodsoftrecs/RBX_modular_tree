@@ -66,6 +66,15 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
             canopy_box.prop(wood, "mtree_foliage_set_id")
             canopy_box.prop(wood, "mtree_foliage_cluster_count")
             canopy_box.prop(wood, "mtree_foliage_card_scale")
+            canopy_box.prop(wood, "mtree_foliage_branch_layers")
+            primary_length_row = canopy_box.row()
+            primary_length_row.enabled = (
+                wood.mtree_foliage_branch_layers == "PRIMARY_SECONDARY"
+            )
+            primary_length_row.prop(wood, "mtree_foliage_primary_card_length")
+            canopy_box.prop(wood, "mtree_foliage_branch_card_length")
+            canopy_box.prop(wood, "mtree_foliage_length_variation")
+            canopy_box.prop(wood, "mtree_foliage_branch_spacing")
             canopy_box.prop(wood, "mtree_foliage_branch_distance")
             canopy_box.prop(wood, "mtree_foliage_texture_rotation")
             canopy_box.prop(wood, "mtree_foliage_pair_rotation")

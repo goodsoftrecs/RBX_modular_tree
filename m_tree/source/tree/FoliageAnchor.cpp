@@ -1,5 +1,7 @@
 #include "FoliageAnchor.hpp"
 
+#include "BranchIdentity.hpp"
+
 #include "source/utilities/GeometryUtilities.hpp"
 #include <algorithm>
 
@@ -28,9 +30,8 @@ Vector3 get_side_child_position(const Node& parent, const NodeChild& child,
 	       tangent * parent.radius;
 }
 
-void extract_branch(const Node& node, const Vector3& node_position, const int branch_id,
-                    const int hierarchy_depth, const float distance_along_branch,
-                    const float branch_length, int& next_branch_id,
+void extract_branch(const Node& node, const Vector3& node_position, const int hierarchy_depth,
+                    const float distance_along_branch, const float branch_length,
                     std::vector<FoliageAnchor>& anchors)
 {
 	const Vector3 end_position = node_position + node.direction * node.length;
@@ -44,31 +45,30 @@ void extract_branch(const Node& node, const Vector3& node_position, const int br
 	    .direction = node.direction,
 	    .radius = end_radius,
 	    .hierarchy_depth = hierarchy_depth,
-	    .branch_id = branch_id,
+	    .branch_id = node.branch_id,
 	    .branch_progress = progress,
 	});
 
 	if (node.children.empty())
 		return;
 
-	extract_branch(node.children[0]->node, end_position, branch_id, hierarchy_depth,
-	               distance_along_branch + node.length, branch_length, next_branch_id, anchors);
+	extract_branch(node.children[0]->node, end_position, hierarchy_depth,
+	               distance_along_branch + node.length, branch_length, anchors);
 
 	for (size_t index = 1; index < node.children.size(); ++index)
 	{
 		const NodeChild& child = *node.children[index];
 		const Vector3 child_position = get_side_child_position(node, child, node_position);
-		const int child_branch_id = next_branch_id++;
 		anchors.push_back(FoliageAnchor{
 		    .position = child_position,
 		    .direction = child.node.direction,
 		    .radius = child.node.radius,
 		    .hierarchy_depth = hierarchy_depth + 1,
-		    .branch_id = child_branch_id,
+		    .branch_id = child.node.branch_id,
 		    .branch_progress = 0.0f,
 		});
-		extract_branch(child.node, child_position, child_branch_id, hierarchy_depth + 1, 0.0f,
-		               calculate_branch_length(child.node), next_branch_id, anchors);
+		extract_branch(child.node, child_position, hierarchy_depth + 1, 0.0f,
+		               calculate_branch_length(child.node), anchors);
 	}
 }
 
@@ -76,13 +76,12 @@ void extract_branch(const Node& node, const Vector3& node_position, const int br
 
 std::vector<FoliageAnchor> extract_foliage_anchors(Tree& tree)
 {
+	assign_branch_ids(tree);
 	std::vector<FoliageAnchor> anchors;
-	int next_branch_id = 0;
 	for (const Stem& stem : tree.get_stems())
 	{
-		const int branch_id = next_branch_id++;
-		extract_branch(stem.node, stem.position, branch_id, 0, 0.0f,
-		               calculate_branch_length(stem.node), next_branch_id, anchors);
+		extract_branch(stem.node, stem.position, 0, 0.0f, calculate_branch_length(stem.node),
+		               anchors);
 	}
 	return anchors;
 }

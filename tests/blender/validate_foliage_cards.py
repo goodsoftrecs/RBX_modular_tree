@@ -110,6 +110,7 @@ try:
         direction=(0.0, 0.0, 1.0),
         normal=tuple(test_normal),
         scale=2.0,
+        length_scale=1.75,
         template_slot=1,
     )
     for template in templates:
@@ -133,12 +134,46 @@ try:
             transform = foliage_cards._card_transform(
                 template, test_placement, bounds, branch_distance
             )
+            unit_length_placement = foliage_layout.CardPlacement(
+                cluster_index=0,
+                card_index=0,
+                anchor_index=0,
+                position=tuple(test_position),
+                direction=(0.0, 0.0, 1.0),
+                normal=tuple(test_normal),
+                scale=2.0,
+                length_scale=1.0,
+                template_slot=slot,
+            )
+            unit_transform = foliage_cards._card_transform(
+                template, unit_length_placement, bounds, branch_distance
+            )
             transformed_attachment = transform @ raw_attachment
             expected_attachment = test_position + test_normal * branch_distance
             assert (transformed_attachment - expected_attachment).length <= 1e-5
             transformed_center = transform @ raw_center
             outward = (transformed_center - transformed_attachment).normalized()
             assert outward.dot(Vector(test_placement.direction)) >= 1.0 - 1e-5
+            unit_attachment = unit_transform @ raw_attachment
+            unit_center = unit_transform @ raw_center
+            assert math.isclose(
+                (transformed_center - transformed_attachment).length,
+                (unit_center - unit_attachment).length * 1.75,
+                rel_tol=1e-5,
+            )
+            target_width = test_normal.cross(Vector(test_placement.direction)).normalized()
+            stretched_widths = [
+                target_width.dot(transform @ vertex.co) for vertex in template.data.vertices
+            ]
+            unit_widths = [
+                target_width.dot(unit_transform @ vertex.co)
+                for vertex in template.data.vertices
+            ]
+            assert math.isclose(
+                max(stretched_widths) - min(stretched_widths),
+                max(unit_widths) - min(unit_widths),
+                rel_tol=1e-5,
+            )
 
     assert (
         bpy.ops.mtree.quick_generate(
@@ -159,6 +194,11 @@ try:
     assert wood.mtree_foliage_seed == 538
     assert wood.mtree_foliage_set_id == "OAK"
     assert wood.mtree_foliage_cluster_count == 30
+    assert wood.mtree_foliage_branch_spacing == 1.0
+    assert wood.mtree_foliage_branch_layers == "SECONDARY_ONLY"
+    assert wood.mtree_foliage_primary_card_length == 2.0
+    assert wood.mtree_foliage_branch_card_length == 1.5
+    assert wood.mtree_foliage_length_variation == 0.0
     assert wood.mtree_foliage_branch_distance == 0.0
     assert wood.mtree_foliage_texture_rotation == 0.0
     assert wood.mtree_foliage_pair_rotation == 0.0
@@ -166,6 +206,42 @@ try:
     assert (
         bpy.types.Object.bl_rna.properties["mtree_foliage_card_scale"].hard_max
         == 12.0
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_cluster_count"].hard_max
+        == 512
+    )
+    assert abs(
+        bpy.types.Object.bl_rna.properties["mtree_foliage_branch_spacing"].hard_min
+        - 0.1
+    ) <= 1e-6
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_branch_spacing"].hard_max
+        == 3.0
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_branch_card_length"].hard_min
+        == 0.5
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_branch_card_length"].hard_max
+        == 3.0
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_primary_card_length"].hard_min
+        == 0.5
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_primary_card_length"].hard_max
+        == 4.0
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_length_variation"].hard_min
+        == 0.0
+    )
+    assert (
+        bpy.types.Object.bl_rna.properties["mtree_foliage_length_variation"].hard_max
+        == 50.0
     )
     assert (
         bpy.types.Object.bl_rna.properties["mtree_foliage_branch_distance"].hard_min
@@ -176,8 +252,41 @@ try:
         == 12.0
     )
     dense_anchors = anchor_data.load_anchor_payload(wood)
+    retained_branch_ids = anchor_data.load_retained_branch_ids(wood, dense_anchors)
     assert dense_anchors
+    assert retained_branch_ids
     assert max(anchor.hierarchy_depth for anchor in dense_anchors) > 0
+    initial_missing = foliage_cards._missing_branch_ids_for_wood(wood, dense_anchors)
+    initial_layout = foliage_layout.build_card_layout(
+        dense_anchors,
+        cluster_count=wood.mtree_foliage_cluster_count,
+        scale_multiplier=wood.mtree_foliage_card_scale,
+        seed=wood.mtree_foliage_seed,
+        template_slots=(1, 2, 3, 4),
+        missing_branch_ids=initial_missing,
+        branch_spacing=wood.mtree_foliage_branch_spacing,
+        template_footprint=foliage_cards._template_footprint(templates),
+        branch_card_length=wood.mtree_foliage_branch_card_length,
+        primary_card_length=wood.mtree_foliage_primary_card_length,
+        length_variation=wood.mtree_foliage_length_variation * 0.01,
+        include_primary_connections=False,
+    )
+    initial_cluster_placements = initial_layout[::2]
+    assert all(
+        dense_anchors[placement.anchor_index].hierarchy_depth >= 2
+        for placement in initial_cluster_placements
+    )
+    initial_progress_by_branch = {}
+    for placement in initial_cluster_placements:
+        anchor = dense_anchors[placement.anchor_index]
+        initial_progress_by_branch.setdefault(anchor.branch_id, []).append(
+            anchor.branch_progress
+        )
+    assert all(progress[0] == 0.0 for progress in initial_progress_by_branch.values())
+    assert all(
+        progress == sorted(progress)
+        for progress in initial_progress_by_branch.values()
+    )
 
     wood_vertices_before = [tuple(vertex.co) for vertex in wood.data.vertices]
     assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
@@ -192,6 +301,11 @@ try:
     assert foliage.get("mtree_foliage_cluster_count") == 30
     assert foliage.get("mtree_foliage_card_count") == 60
     assert foliage.get("mtree_foliage_branch_distance") == 0.0
+    assert foliage.get("mtree_foliage_branch_spacing") == 1.0
+    assert foliage.get("mtree_foliage_branch_card_length") == 1.5
+    assert foliage.get("mtree_foliage_primary_card_length") == 2.0
+    assert foliage.get("mtree_foliage_branch_layers") == "SECONDARY_ONLY"
+    assert foliage.get("mtree_foliage_length_variation") == 0.0
     missing_branch_count = foliage.get("mtree_foliage_missing_branch_count")
     missing_branch_clusters = foliage.get("mtree_foliage_missing_branch_clusters")
     physical_branch_clusters = foliage.get("mtree_foliage_physical_branch_clusters")
@@ -223,6 +337,33 @@ try:
         if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
     )
     assert [tuple(vertex.co) for vertex in refreshed.data.vertices] == first_vertices
+
+    # The raised authoring ceiling supports a 500-cluster tree exactly.
+    wood.mtree_foliage_cluster_count = 500
+    bpy.context.view_layer.objects.active = wood
+    wood.select_set(True)
+    refreshed.select_set(False)
+    assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
+    high_density = next(
+        obj
+        for obj in bpy.data.objects
+        if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
+    )
+    assert high_density.get("mtree_foliage_cluster_count") == 500
+    assert high_density.get("mtree_foliage_card_count") == 1000
+    assert len(high_density.data.polygons) == 1000
+    assert sum(len(polygon.vertices) - 2 for polygon in high_density.data.polygons) == 2000
+
+    wood.mtree_foliage_cluster_count = 30
+    bpy.context.view_layer.objects.active = wood
+    wood.select_set(True)
+    high_density.select_set(False)
+    assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
+    refreshed = next(
+        obj
+        for obj in bpy.data.objects
+        if obj.get("mtree_tree_id") == tree_id and obj.get("mtree_role") == "FOLIAGE"
+    )
 
     # Raising count appends branch-layer placements without moving or shrinking prior cards.
     wood.mtree_foliage_cluster_count = 40
@@ -273,6 +414,10 @@ try:
     wood.mtree_foliage_pair_rotation = math.radians(30.0)
     wood.mtree_foliage_canopy_rotation = math.radians(90.0)
     wood.mtree_foliage_branch_distance = -0.25
+    wood.mtree_foliage_branch_spacing = 1.5
+    wood.mtree_foliage_branch_card_length = 2.0
+    wood.mtree_foliage_primary_card_length = 2.75
+    wood.mtree_foliage_length_variation = 25.0
     preview_material = templates[0].data.materials[0]
     image_node = preview_material.node_tree.nodes.new("ShaderNodeTexImage")
     image_node.image = bpy.data.images.new("FoliageControlValidation", width=2, height=2)
@@ -316,6 +461,18 @@ try:
     assert math.isclose(
         controlled.get("mtree_foliage_branch_distance"), -0.25, abs_tol=1e-6
     )
+    assert math.isclose(
+        controlled.get("mtree_foliage_branch_spacing"), 1.5, abs_tol=1e-6
+    )
+    assert math.isclose(
+        controlled.get("mtree_foliage_branch_card_length"), 2.0, abs_tol=1e-6
+    )
+    assert math.isclose(
+        controlled.get("mtree_foliage_primary_card_length"), 2.75, abs_tol=1e-6
+    )
+    assert math.isclose(
+        controlled.get("mtree_foliage_length_variation"), 25.0, abs_tol=1e-6
+    )
 
     bpy.context.view_layer.objects.active = controlled
     controlled.select_set(True)
@@ -343,7 +500,12 @@ try:
     bpy.context.view_layer.objects.active = wood
     wood.select_set(True)
     edited.select_set(False)
-    assert bpy.ops.mtree.refresh_foliage_cards() == {"CANCELLED"}
+    try:
+        corner_result = bpy.ops.mtree.refresh_foliage_cards()
+    except RuntimeError as error:
+        assert "top-right UV corner" in str(error)
+        corner_result = {"CANCELLED"}
+    assert corner_result == {"CANCELLED"}
     assert bpy.data.objects.get(edited.name) is edited
     for loop, saved_uv in zip(corner_uvs, saved_corner_uvs, strict=True):
         loop.uv = saved_uv
@@ -354,7 +516,12 @@ try:
     bpy.context.view_layer.objects.active = wood
     wood.select_set(True)
     edited.select_set(False)
-    assert bpy.ops.mtree.refresh_foliage_cards() == {"CANCELLED"}
+    try:
+        material_result = bpy.ops.mtree.refresh_foliage_cards()
+    except RuntimeError as error:
+        assert "atlas material" in str(error)
+        material_result = {"CANCELLED"}
+    assert material_result == {"CANCELLED"}
     assert bpy.data.objects.get(edited.name) is edited
     templates[3].data.materials[0] = preview_material
     if mismatched_material.users == 0:

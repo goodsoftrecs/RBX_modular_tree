@@ -6,7 +6,15 @@ import zlib
 
 import pytest
 
-from foliage_anchor_data import FoliageAnchor, decode_anchor_payload, encode_anchor_payload
+from foliage_anchor_data import (
+    RETAINED_BRANCH_IDS_KEY,
+    FoliageAnchor,
+    decode_anchor_payload,
+    encode_anchor_payload,
+    load_retained_branch_ids,
+    store_retained_branch_ids,
+    validate_retained_branch_ids,
+)
 
 
 def _anchors():
@@ -46,3 +54,32 @@ def test_pre_junction_anchor_schema_requires_tree_regeneration():
 
     with pytest.raises(ValueError, match="unsupported schema"):
         decode_anchor_payload(stale_payload)
+
+
+def test_retained_branch_ids_round_trip_against_anchor_graph():
+    wood = {}
+
+    store_retained_branch_ids(wood, [8, 7], _anchors())
+
+    assert wood[RETAINED_BRANCH_IDS_KEY] == [7, 8]
+    assert load_retained_branch_ids(wood, _anchors()) == frozenset({7, 8})
+
+
+@pytest.mark.parametrize(
+    ("retained_ids", "message"),
+    [
+        ([], "no retained"),
+        ([7, 7], "duplicates"),
+        ([-1], "non-negative"),
+        ([99], "absent"),
+        ([7.0], "integers"),
+    ],
+)
+def test_invalid_retained_branch_ids_fail_explicitly(retained_ids, message):
+    with pytest.raises(ValueError, match=message):
+        validate_retained_branch_ids(retained_ids, _anchors())
+
+
+def test_missing_retained_report_requires_regeneration():
+    with pytest.raises(ValueError, match="regenerate"):
+        load_retained_branch_ids({}, _anchors())

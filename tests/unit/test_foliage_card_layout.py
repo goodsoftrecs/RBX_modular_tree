@@ -21,7 +21,7 @@ def _anchors():
         for z in range(1, 10)
     ]
     for branch_id, angle in enumerate((0.0, 1.57, 3.14, 4.71), start=1):
-        for step in range(1, 6):
+        for step in range(0, 6):
             radius = 0.32 - step * 0.045
             direction = (math.cos(angle), math.sin(angle), 0.25)
             anchors.append(
@@ -33,7 +33,7 @@ def _anchors():
                     ),
                     direction,
                     radius,
-                    1 + (step >= 4),
+                    2,
                     branch_id,
                     step / 5.0,
                 )
@@ -57,14 +57,14 @@ def test_layout_is_deterministic_and_returns_exact_card_count():
 def test_count_increase_is_stable_prefix_and_fills_visible_branches_inward():
     anchors = []
     for branch_id, axis in ((1, 0), (2, 1)):
-        for progress in (0.25, 0.5, 0.75, 1.0):
+        for progress in (0.0, 0.25, 0.5, 0.75, 1.0):
             position = [0.0, 0.0, 3.0]
             position[axis] = progress * 4.0
             direction = [0.0, 0.0, 0.2]
             direction[axis] = 1.0
             anchors.append(
                 FoliageAnchor(
-                    tuple(position), tuple(direction), 0.1, 1, branch_id, progress
+                    tuple(position), tuple(direction), 0.1, 2, branch_id, progress
                 )
             )
 
@@ -85,14 +85,9 @@ def test_count_increase_is_stable_prefix_and_fills_visible_branches_inward():
 
     assert higher[: len(lower)] == lower
     selected = [higher[index].anchor_index for index in range(0, len(higher), 2)]
-    assert [anchors[index].branch_progress for index in selected] == [
-        1.0,
-        1.0,
-        0.75,
-        0.75,
-        0.5,
-        0.5,
-    ]
+    progress = [anchors[index].branch_progress for index in selected]
+    assert progress[:2] == [0.0, 0.0]
+    assert progress == sorted(progress)
 
 
 def test_geometric_detection_uses_middle_and_outer_branch_path():
@@ -117,11 +112,12 @@ def test_geometric_detection_uses_middle_and_outer_branch_path():
     assert classify_missing_branch_ids(anchors, distance_to_wood, 10.0) == {2}
 
 
-def test_physical_branches_precede_missing_branches_then_missing_runs_outward():
+def test_connections_precede_outward_anchors_with_physical_priority_per_stage():
     anchors = [
         FoliageAnchor((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.5, 0, 0, 1.0),
-        FoliageAnchor((1.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.12, 1, 1, 0.5),
-        FoliageAnchor((2.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.08, 1, 1, 1.0),
+        FoliageAnchor((0.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.16, 2, 1, 0.0),
+        FoliageAnchor((1.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.12, 2, 1, 0.5),
+        FoliageAnchor((2.0, 0.0, 2.0), (1.0, 0.0, 0.0), 0.08, 2, 1, 1.0),
         FoliageAnchor((0.2, 0.0, 2.0), (0.0, 1.0, 0.0), 0.18, 2, 2, 0.0),
         FoliageAnchor((0.2, 1.0, 2.0), (0.0, 1.0, 0.0), 0.10, 2, 2, 0.5),
         FoliageAnchor((0.2, 2.0, 2.0), (0.0, 1.0, 0.0), 0.05, 2, 2, 1.0),
@@ -135,10 +131,17 @@ def test_physical_branches_precede_missing_branches_then_missing_runs_outward():
     )
     selected = [layout[index].anchor_index for index in range(0, len(layout), 2)]
 
-    assert all(anchors[index].branch_id == 1 for index in selected[:2])
-    missing_progress = [anchors[index].branch_progress for index in selected[2:]]
+    assert [(anchors[index].branch_id, anchors[index].branch_progress) for index in selected[:2]] == [
+        (1, 0.0),
+        (2, 0.0),
+    ]
+    assert anchors[selected[2]].branch_id == 1
+    missing_progress = [
+        anchors[index].branch_progress
+        for index in selected[3:]
+        if anchors[index].branch_id == 2
+    ]
     assert missing_progress == sorted(missing_progress)
-    assert missing_progress[0] == 0.0
 
 
 def test_trunk_and_thick_branch_bases_are_ineligible():
@@ -163,21 +166,240 @@ def test_each_pair_follows_branch_and_forms_fixed_v_angle():
         assert angle == pytest.approx(55.0)
 
 
-def test_scale_multiplier_only_changes_card_scale():
+def test_scale_multiplier_changes_card_scale_and_automatic_spacing_footprint():
     normal = build_card_layout(_anchors(), cluster_count=5, scale_multiplier=1.0, seed=44)
     doubled = build_card_layout(_anchors(), cluster_count=5, scale_multiplier=2.0, seed=44)
 
-    assert [placement.anchor_index for placement in normal] == [
-        placement.anchor_index for placement in doubled
-    ]
     for original, scaled in zip(normal, doubled, strict=True):
         assert scaled.scale == pytest.approx(original.scale * 2.0)
+    assert [placement.anchor_index for placement in normal] != [
+        placement.anchor_index for placement in doubled
+    ]
+
+
+def test_branch_spacing_skips_farther_down_one_branch():
+    anchors = [
+        FoliageAnchor(
+            (float(step), 0.0, 2.0),
+            (1.0, 0.0, 0.0),
+            0.1,
+            2,
+            1,
+            step / 5.0,
+        )
+        for step in range(0, 6)
+    ]
+
+    dense = build_card_layout(
+        anchors,
+        cluster_count=3,
+        scale_multiplier=1.0,
+        seed=7,
+        branch_spacing=0.1,
+        template_footprint=1.0,
+    )
+    spread = build_card_layout(
+        anchors,
+        cluster_count=3,
+        scale_multiplier=1.0,
+        seed=7,
+        branch_spacing=3.0,
+        template_footprint=1.0,
+    )
+
+    dense_progress = [
+        anchors[dense[index].anchor_index].branch_progress
+        for index in range(0, len(dense), 2)
+    ]
+    spread_progress = [
+        anchors[spread[index].anchor_index].branch_progress
+        for index in range(0, len(spread), 2)
+    ]
+    assert dense_progress == [0.0, 0.2, 0.4]
+    assert spread_progress == [0.0, 0.4, 0.8]
+
+
+def test_tighter_spacing_phase_never_backtracks_toward_connection():
+    anchors = [
+        FoliageAnchor(
+            (float(step), 0.0, 2.0),
+            (1.0, 0.0, 0.0),
+            0.1,
+            2,
+            1,
+            step / 5.0,
+        )
+        for step in range(0, 6)
+    ]
+    anchors.extend(
+        FoliageAnchor(
+            (20.0 + float(step), 0.0, 2.0),
+            (1.0, 0.0, 0.0),
+            0.1,
+            2,
+            2,
+            step / 5.0,
+        )
+        for step in range(0, 6)
+    )
+
+    layout = build_card_layout(
+        anchors,
+        cluster_count=4,
+        scale_multiplier=1.0,
+        seed=7,
+        missing_branch_ids=frozenset({2}),
+        branch_spacing=3.0,
+        template_footprint=1.0,
+    )
+    selected = [layout[index].anchor_index for index in range(0, len(layout), 2)]
+    physical_progress = [
+        anchors[index].branch_progress
+        for index in selected
+        if anchors[index].branch_id == 1
+    ]
+
+    assert physical_progress == sorted(physical_progress)
+
+
+def test_nearby_secondary_connections_are_kept_as_first_branch_candidates():
+    anchors = []
+    for branch_id, y in ((1, 0.0), (2, 0.1)):
+        for step in range(0, 6):
+            anchors.append(
+                FoliageAnchor(
+                    (float(step), y, 2.0),
+                    (1.0, 0.0, 0.0),
+                    0.1,
+                    2,
+                    branch_id,
+                    step / 5.0,
+                )
+            )
+
+    layout = build_card_layout(
+        anchors,
+        cluster_count=2,
+        scale_multiplier=1.0,
+        seed=7,
+        branch_spacing=3.0,
+        template_footprint=1.0,
+    )
+    selected = [layout[index].anchor_index for index in range(0, len(layout), 2)]
+
+    assert [anchors[index].branch_progress for index in selected] == [0.0, 0.0]
+
+
+def test_branch_card_length_and_variation_are_deterministic_and_bounded():
+    uniform = build_card_layout(
+        _anchors(),
+        cluster_count=8,
+        scale_multiplier=1.0,
+        seed=91,
+        branch_card_length=1.5,
+        length_variation=0.0,
+    )
+    varied = build_card_layout(
+        _anchors(),
+        cluster_count=8,
+        scale_multiplier=1.0,
+        seed=91,
+        branch_card_length=1.5,
+        length_variation=0.5,
+    )
+    repeated = build_card_layout(
+        _anchors(),
+        cluster_count=8,
+        scale_multiplier=1.0,
+        seed=91,
+        branch_card_length=1.5,
+        length_variation=0.5,
+    )
+
+    assert all(placement.length_scale == 1.5 for placement in uniform)
+    assert varied == repeated
+    assert [placement.anchor_index for placement in varied] == [
+        placement.anchor_index for placement in uniform
+    ]
+    for index in range(0, len(varied), 2):
+        pair = varied[index : index + 2]
+        assert pair[0].length_scale == pair[1].length_scale
+        assert 0.75 <= pair[0].length_scale <= 2.25
+    assert any(placement.length_scale != 1.5 for placement in varied)
+
+
+def test_primary_secondary_mode_prioritizes_trunk_connections_then_secondary_connections():
+    anchors = []
+    for branch_id, depth, y in ((1, 1, 0.0), (2, 1, 2.0), (3, 2, 4.0), (4, 2, 6.0)):
+        for step in range(0, 4):
+            anchors.append(
+                FoliageAnchor(
+                    (float(step), y, 3.0),
+                    (1.0, 0.0, 0.0),
+                    0.1,
+                    depth,
+                    branch_id,
+                    step / 3.0,
+                )
+            )
+
+    layout = build_card_layout(
+        anchors,
+        cluster_count=6,
+        scale_multiplier=1.0,
+        seed=17,
+        include_primary_connections=True,
+        primary_card_length=2.5,
+        branch_card_length=1.5,
+        branch_spacing=0.1,
+    )
+    selected = [layout[index] for index in range(0, len(layout), 2)]
+    selected_anchors = [anchors[placement.anchor_index] for placement in selected]
+
+    assert [anchor.hierarchy_depth for anchor in selected_anchors[:2]] == [1, 1]
+    assert [anchor.branch_progress for anchor in selected_anchors[:4]] == [0.0] * 4
+    assert [anchor.hierarchy_depth for anchor in selected_anchors[2:4]] == [2, 2]
+    assert all(
+        placement.length_scale
+        == (2.5 if anchor.hierarchy_depth == 1 else 1.5)
+        for placement, anchor in zip(selected, selected_anchors, strict=True)
+    )
+    assert all(anchor.branch_progress > 0.0 for anchor in selected_anchors[4:])
+
+
+def test_secondary_only_mode_excludes_primary_branch_anchors():
+    anchors = []
+    for branch_id, depth, y in ((1, 1, 0.0), (2, 2, 2.0)):
+        for step in range(0, 4):
+            anchors.append(
+                FoliageAnchor(
+                    (float(step), y, 3.0),
+                    (1.0, 0.0, 0.0),
+                    0.1,
+                    depth,
+                    branch_id,
+                    step / 3.0,
+                )
+            )
+
+    layout = build_card_layout(
+        anchors,
+        cluster_count=4,
+        scale_multiplier=1.0,
+        seed=17,
+        include_primary_connections=False,
+    )
+
+    assert all(
+        anchors[layout[index].anchor_index].hierarchy_depth >= 2
+        for index in range(0, len(layout), 2)
+    )
 
 
 def test_texture_rotation_expands_sampling_uvs_for_clipped_fit():
     corners = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
 
-    assert [rotate_uv_to_fit(uv, 0.0) for uv in corners] == corners
+    assert [rotate_uv_to_fit(uv, 0.0) for uv in corners] == list(corners)
     rotated = [rotate_uv_to_fit(uv, math.radians(45.0)) for uv in corners]
 
     assert any(component < 0.0 for uv in rotated for component in uv)
@@ -274,6 +496,34 @@ def test_invalid_layout_inputs_fail_explicitly():
             scale_multiplier=1.0,
             seed=0,
             pair_rotation_radians=float("nan"),
+        )
+    with pytest.raises(ValueError, match="Branch Spacing"):
+        build_card_layout(
+            _anchors(), cluster_count=1, scale_multiplier=1.0, seed=0, branch_spacing=0.0
+        )
+    with pytest.raises(ValueError, match="Branch Card Length"):
+        build_card_layout(
+            _anchors(),
+            cluster_count=1,
+            scale_multiplier=1.0,
+            seed=0,
+            branch_card_length=3.1,
+        )
+    with pytest.raises(ValueError, match="Primary Card Length"):
+        build_card_layout(
+            _anchors(),
+            cluster_count=1,
+            scale_multiplier=1.0,
+            seed=0,
+            primary_card_length=4.1,
+        )
+    with pytest.raises(ValueError, match="Length Variation"):
+        build_card_layout(
+            _anchors(),
+            cluster_count=1,
+            scale_multiplier=1.0,
+            seed=0,
+            length_variation=0.51,
         )
     with pytest.raises(ValueError, match="Texture rotation"):
         rotate_uv_to_fit((0.0, 0.0), float("inf"))

@@ -75,7 +75,7 @@ try:
     counts = {}
     over_budget = []
     for preset in authored_species:
-        mesh, anchors = operators.QuickGenerateTree._generate_tree(
+        mesh, anchors, retained_branch_ids = operators.QuickGenerateTree._generate_tree(
             generation_settings(preset), 1234
         )
         counts[preset] = triangle_count(mesh)
@@ -84,18 +84,19 @@ try:
         if counts[preset] > 4500:
             over_budget.append((preset, counts[preset]))
         assert len(anchors) > 0
+        assert retained_branch_ids
 
     assert not over_budget, f"Stock species above 4.5K triangles: {over_budget}"
 
-    oak_default, _ = operators.QuickGenerateTree._generate_tree(
+    oak_default, _, _ = operators.QuickGenerateTree._generate_tree(
         generation_settings("OAK"), 1234
     )
-    oak_thick, _ = operators.QuickGenerateTree._generate_tree(
+    oak_thick, _, _ = operators.QuickGenerateTree._generate_tree(
         generation_settings("OAK", trunk_thickness=2.0), 1234
     )
     assert triangle_count(oak_thick) == triangle_count(oak_default)
 
-    oak_no_secondary, _ = operators.QuickGenerateTree._generate_tree(
+    oak_no_secondary, _, _ = operators.QuickGenerateTree._generate_tree(
         generation_settings("OAK", secondary_branches=False), 1234
     )
     assert triangle_count(oak_no_secondary) <= triangle_count(oak_default)
@@ -123,6 +124,8 @@ try:
     assert math.isclose(wood.get("mtree_trunk_thickness"), 1.5, abs_tol=1e-6)
     assert math.isclose(wood.get("mtree_branch_density"), 0.8, abs_tol=1e-6)
     assert wood.mtree_foliage_set_id == "CEDAR"
+    assert wood.mtree_foliage_branch_layers == "PRIMARY_SECONDARY"
+    assert math.isclose(wood.mtree_foliage_primary_card_length, 2.0, abs_tol=1e-6)
     print("SIDEBAR_GENERATION_OK", flush=True)
 
     assert bpy.ops.mtree.refresh_foliage_cards() == {"FINISHED"}
@@ -133,6 +136,10 @@ try:
         and obj.get("mtree_role") == "FOLIAGE"
     )
     assert foliage.get("mtree_foliage_card_count") == 60
+    assert foliage.get("mtree_foliage_branch_layers") == "PRIMARY_SECONDARY"
+    assert math.isclose(
+        foliage.get("mtree_foliage_primary_card_length"), 2.0, abs_tol=1e-6
+    )
     assert sum(len(polygon.vertices) - 2 for polygon in foliage.data.polygons) == 120
     print("SIDEBAR_FOLIAGE_OK", flush=True)
 

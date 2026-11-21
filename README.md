@@ -81,8 +81,10 @@ rings; density and secondary branches are the controls most likely to increase t
 5. Generate a tree with **Add Legacy Leaves** disabled (the default), then select its wood object.
    A matching initialized species set is selected automatically; **Tree Foliage Set** can override
    it.
-6. Adjust **Foliage Cluster Count**, **Card Scale** (up to `12x`), signed **Branch Distance**,
-   **Texture Rotation**, **Card Pair Rotation**, **Canopy Rotation**, or **Foliage Seed**.
+6. Adjust exact **Foliage Cluster Count** (up to `512`), **Card Scale** (up to `12x`),
+   **Branch Start Layers**, **Primary Card Length** (`0.5x` to `4.0x`), **Branch Card Length**
+   (`0.5x` to `3.0x`), **Length Variation** (`0%` to `50%`), **Branch Spacing** (`0.1x` to
+   `3.0x`), signed **Branch Distance**, rotations, or **Foliage Seed**.
 7. Click **Generate / Refresh Foliage Cards**.
 
 The atlas layout is fixed: Large A is top-left, Large B is top-right, Small A is bottom-left, and
@@ -103,22 +105,34 @@ one foliage object, and one material. Each pair deterministically chooses one of
 and both planes in that pair use the same variant. The per-species collection exists only to keep
 the four editable sources organized; it does not split the generated tree into four objects.
 
-Placement checks the complete branch graph against the final optimized wood. Anchors on physical
-branches are selected first in round-robin progress layers: foliage begins at their tips and added
-clusters move inward toward the trunk. If the requested count reaches a branch omitted from the wood
-mesh, that branch uses the inverse safety order, filling from its explicit progress-zero parent
-junction outward instead of starting at the end of its invisible first segment. **Foliage Cluster
-Count** remains exact and cumulative: raising it preserves existing placements and appends new
-ones. Automatic card size uses the fixed 30-cluster reference density, so raising the count adds
-visible density instead of shrinking every existing card; use **Card Scale** to change their size.
+The native mesher records the exact stable branch IDs retained in the optimized wood; placement no
+longer guesses physical branches from mesh proximity. Foliage-bearing secondary branches begin at
+their explicit progress-zero connection anchors and extend toward their tips. Retained physical
+branches are selected before branches omitted from the optimized wood. **Branch Start Layers** can
+use secondary connections only or include the primary connections where major limbs meet the
+trunk. Pine, Cedar, Sequoia, and Hemlock default to **Primary + Secondary**; broadleaf presets
+default to **Secondary Only**. Every selected branch receives its connection anchor first, and
+additional requested clusters advance outward.
+
+**Primary Card Length** controls trunk-origin cards independently and defaults to `2.0x`.
+**Branch Card Length** controls secondary cards and defaults to `1.5x`. Both scale only the authored
+attachment-to-center axis around the pinned corner and do not widen the card. **Length Variation** applies deterministic
+per-cluster variation around that value, with both planes in a pair always sharing one length; zero
+is fully uniform. Variation changes geometry only and never reshuffles placement or atlas variants.
+
+**Branch Spacing** independently multiplies the minimum separation derived from the edited card
+footprint and **Card Scale**. Lower values pack outward placements more tightly and higher values
+skip farther along each branch. **Foliage Cluster Count** remains exact and cumulative: raising it
+preserves existing placements and appends new ones. Automatic card size uses the fixed 30-cluster
+reference density, so raising count does not shrink existing cards.
 
 Refresh replaces only the selected tree's combined foliage mesh. It preserves the wood, settings,
 seed, and editable templates, and selection may start from either wood or foliage. Trees generated
-before complete-graph anchor persistence or progress-zero junction anchors were added must be
-regenerated; the add-on fails explicitly instead of falling back to stale or sparse anchor data.
-Refreshing foliage alone cannot add missing junction anchors to an existing tree.
+before complete-graph anchor persistence, progress-zero junction anchors, or retained-branch ID
+reporting were added must be regenerated; the add-on fails explicitly instead of falling back to
+stale or guessed branch data. Refreshing foliage alone cannot add the required tree metadata.
 
-The three rotation controls are per tree. Texture Rotation transforms UVs inside each selected
+The length, variation, spacing, and three rotation controls are per tree. Texture Rotation transforms UVs inside each selected
 quadrant and cannot sample a neighboring atlas slot; Card Pair Rotation rolls each shallow-V pair
 around its virtual branch; Canopy Rotation turns all foliage around the tree-local vertical axis.
 Wind and automatic LOD generation remain later stages and do not require changing anchor extraction.

@@ -1,10 +1,12 @@
 #include "ManifoldMesher.hpp"
+#include "source/tree/BranchIdentity.hpp"
 #include "smoothing.hpp"
 #include "source/utilities/GeometryUtilities.hpp"
 #include "source/utilities/NodeUtilities.hpp"
 #include <algorithm>
 #include <iostream>
 #include <numbers>
+#include <set>
 
 using namespace Mtree;
 using namespace Mtree::NodeUtilities;
@@ -398,7 +400,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
                    Mesh& mesh, const float uv_y, const PivotPainterContext& pp_ctx,
                    int& stem_id_counter, int section_index, const int longitudinal_stride,
                    int sections_since_ring, const int max_branch_depth,
-                   const float minimum_branch_radius)
+                   const float minimum_branch_radius, std::set<int>& retained_branch_ids)
 {
 	const int child_depth = pp_ctx.hierarchy_depth + 1;
 	bool has_meshable_side_branch = false;
@@ -423,7 +425,8 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 		{
 			mesh_node_rec(node.children[0]->node, child_pos, base, mesh, uv_y + uv_growth, pp_ctx,
 			              stem_id_counter, section_index + 1, longitudinal_stride,
-			              sections_since_ring + 1, max_branch_depth, minimum_branch_radius);
+			              sections_since_ring + 1, max_branch_depth, minimum_branch_radius,
+			              retained_branch_ids);
 			return;
 		}
 
@@ -435,7 +438,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 		{
 			mesh_node_rec(node.children[0]->node, child_pos, child_circle, mesh, uv_y + uv_growth,
 			              pp_ctx, stem_id_counter, section_index + 1, longitudinal_stride, 0,
-			              max_branch_depth, minimum_branch_radius);
+			              max_branch_depth, minimum_branch_radius, retained_branch_ids);
 		}
 	}
 	else
@@ -466,7 +469,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 					mesh_node_rec(node.children[0]->node, child_pos, end_circle, mesh,
 					              uv_y + uv_growth, pp_ctx, stem_id_counter, section_index + 1,
 					              longitudinal_stride, 0, max_branch_depth,
-					              minimum_branch_radius);
+					              minimum_branch_radius, retained_branch_ids);
 				}
 			}
 			else
@@ -475,6 +478,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 				if (!should_mesh_side_branch(child, child_depth, max_branch_depth,
 				                             minimum_branch_radius))
 					continue;
+				retained_branch_ids.insert(child.node.branch_id);
 				Vector3 child_pos = get_side_child_position(node, child, node_position);
 
 				// Create new context for side branch with incremented stem_id and depth
@@ -491,7 +495,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 				// Side branches start with section_index=1 (0 was the base from add_child_circle)
 				mesh_node_rec(node.children[i]->node, child_pos, child_base, mesh, uv_y + uv_growth,
 				              child_pp_ctx, stem_id_counter, 1, longitudinal_stride, 0,
-				              max_branch_depth, minimum_branch_radius);
+				              max_branch_depth, minimum_branch_radius, retained_branch_ids);
 			}
 		}
 	}
@@ -503,6 +507,9 @@ namespace Mtree
 
 Mesh ManifoldMesher::mesh_tree(Tree& tree)
 {
+	assign_branch_ids(tree);
+	retained_branch_ids.clear();
+	std::set<int> retained_ids;
 	Mesh mesh;
 	auto& smooth_attr = mesh.add_attribute<float>(AttributeNames::smooth_amount);
 	auto& radius_attr = mesh.add_attribute<float>(AttributeNames::radius);
@@ -522,6 +529,7 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 
 		if (stem.node.children.size() == 0)
 			continue;
+		retained_ids.insert(stem.node.branch_id);
 
 		// Initialize Pivot Painter context for this stem
 		PivotPainterContext pp_ctx;
@@ -535,8 +543,9 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 		add_circle(stem.position, stem.node, 0, radial_resolution, mesh, 0, pp_ctx, 0);
 		mesh_node_rec(stem.node, stem.position, start_circle, mesh, 0, pp_ctx, stem_id_counter, 1,
 		              std::max(1, longitudinal_stride), 0, max_branch_depth,
-		              std::max(0.f, minimum_branch_radius_ratio) * stem.node.radius);
+		              std::max(0.f, minimum_branch_radius_ratio) * stem.node.radius, retained_ids);
 	}
+	retained_branch_ids.assign(retained_ids.begin(), retained_ids.end());
 	if (smooth_iterations > 0)
 		MeshProcessing::Smoothing::smooth_mesh(mesh, smooth_iterations, 1, &smooth_attr.data);
 	return mesh;

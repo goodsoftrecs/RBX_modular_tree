@@ -19,6 +19,7 @@ class Node
 	float length;
 	float radius;
 	int creator_id = 0;
+	int branch_id = -1;
 	GrowthInfo growthInfo;
 
 	bool is_leaf() const;

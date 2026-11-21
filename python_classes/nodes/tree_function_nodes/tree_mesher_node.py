@@ -13,7 +13,11 @@ from ...game_output_profiles import (
     WOOD_OUTPUT_PROFILE_ITEMS,
     resolve_wood_mesher_settings,
 )
-from ...foliage_anchor_data import anchors_from_native, store_anchor_payload
+from ...foliage_anchor_data import (
+    anchors_from_native,
+    store_anchor_payload,
+    store_retained_branch_ids,
+)
 from ..base_types.node import MtreeNode
 from ..debounce import schedule_build
 
@@ -141,9 +145,11 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
             tree.execute_functions()
 
             foliage_anchors = anchors_from_native(m_tree.extract_foliage_anchors(tree))
-            cpp_mesh = self._mesh_tree(tree)
+            cpp_mesh, retained_branch_ids = self._mesh_tree(tree)
             self._output_to_blender(cpp_mesh)
-            store_anchor_payload(self.get_current_tree_object(), foliage_anchors)
+            tree_object = self.get_current_tree_object()
+            store_anchor_payload(tree_object, foliage_anchors)
+            store_retained_branch_ids(tree_object, retained_branch_ids, foliage_anchors)
 
             elapsed = time.time() - start_time
             self.status_message = f"Generated in {elapsed:.2f}s"
@@ -166,7 +172,8 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
         mesher.longitudinal_stride = settings.longitudinal_stride
         mesher.max_branch_depth = settings.max_branch_depth
         mesher.minimum_branch_radius_ratio = settings.minimum_branch_radius_ratio
-        return mesher.mesh_tree(tree)
+        cpp_mesh = mesher.mesh_tree(tree)
+        return cpp_mesh, list(mesher.retained_branch_ids)
 
     def get_current_tree_object(self):
         """Get or create the Blender object for this tree."""

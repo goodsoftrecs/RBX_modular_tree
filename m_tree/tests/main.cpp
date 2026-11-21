@@ -161,8 +161,13 @@ TEST(foliage_anchors_are_deterministic_and_independent_of_mesh_pruning)
 
 	std::set<int> side_branch_ids;
 	std::set<int> junction_anchor_ids;
+	std::set<int> all_branch_ids;
+	std::set<int> expected_depth_pruned_ids;
 	for (const auto& anchor : first)
 	{
+		all_branch_ids.insert(anchor.branch_id);
+		if (anchor.hierarchy_depth <= 1)
+			expected_depth_pruned_ids.insert(anchor.branch_id);
 		if (anchor.hierarchy_depth <= 0)
 			continue;
 		side_branch_ids.insert(anchor.branch_id);
@@ -172,10 +177,21 @@ TEST(foliage_anchors_are_deterministic_and_independent_of_mesh_pruning)
 	ASSERT_GT(static_cast<int>(side_branch_ids.size()), 0);
 	ASSERT_EQ(side_branch_ids.size(), junction_anchor_ids.size());
 
+	ManifoldMesher full_mesher;
+	full_mesher.radial_resolution = 8;
+	full_mesher.mesh_tree(tree);
+	const std::set<int> full_retained_ids(full_mesher.retained_branch_ids.begin(),
+	                                      full_mesher.retained_branch_ids.end());
+	ASSERT_EQ(all_branch_ids.size(), full_retained_ids.size());
+	ASSERT_TRUE(all_branch_ids == full_retained_ids);
+
 	ManifoldMesher pruned_mesher;
 	pruned_mesher.radial_resolution = 8;
 	pruned_mesher.max_branch_depth = 1;
 	const Mesh pruned_mesh = pruned_mesher.mesh_tree(tree);
+	const std::set<int> pruned_retained_ids(pruned_mesher.retained_branch_ids.begin(),
+	                                        pruned_mesher.retained_branch_ids.end());
+	ASSERT_TRUE(pruned_retained_ids == expected_depth_pruned_ids);
 	const auto& depth_attribute = *static_cast<Attribute<float>*>(
 	    pruned_mesh.attributes.at(ManifoldMesher::AttributeNames::hierarchy_depth).get());
 	float maximum_mesh_depth = 0.0f;

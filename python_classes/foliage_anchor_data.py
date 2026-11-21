@@ -11,6 +11,7 @@ from typing import Iterable
 
 
 ANCHOR_PAYLOAD_KEY = "mtree_foliage_anchor_payload"
+RETAINED_BRANCH_IDS_KEY = "mtree_foliage_retained_branch_ids"
 ANCHOR_PAYLOAD_SCHEMA = 2
 _PAYLOAD_PREFIX = "zlib-json-v1:"
 _MAX_ANCHORS = 250_000
@@ -145,6 +146,40 @@ def store_anchor_payload(wood: object, anchors: Iterable[FoliageAnchor]) -> None
     wood[ANCHOR_PAYLOAD_KEY] = encode_anchor_payload(anchors)  # type: ignore[index]
 
 
+def validate_retained_branch_ids(
+    retained_branch_ids: Iterable[object], anchors: Iterable[FoliageAnchor]
+) -> frozenset[int]:
+    """Validate the native mesher's retained IDs against the complete anchor graph."""
+
+    anchor_ids = {validate_anchor(anchor).branch_id for anchor in anchors}
+    try:
+        raw_ids = list(retained_branch_ids)
+    except TypeError as exc:
+        raise ValueError("Retained branch IDs must be an iterable of integers") from exc
+    if not raw_ids:
+        raise ValueError("Native mesher reported no retained branch IDs")
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in raw_ids):
+        raise ValueError("Retained branch IDs must contain only integers")
+    normalized = [int(value) for value in raw_ids]
+    if any(value < 0 for value in normalized):
+        raise ValueError("Retained branch IDs must be non-negative")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("Retained branch IDs must not contain duplicates")
+    unknown = set(normalized) - anchor_ids
+    if unknown:
+        raise ValueError("Native mesher reported branch IDs absent from foliage anchors")
+    return frozenset(normalized)
+
+
+def store_retained_branch_ids(
+    wood: object,
+    retained_branch_ids: Iterable[object],
+    anchors: Iterable[FoliageAnchor],
+) -> None:
+    validated = validate_retained_branch_ids(retained_branch_ids, anchors)
+    wood[RETAINED_BRANCH_IDS_KEY] = sorted(validated)  # type: ignore[index]
+
+
 def load_anchor_payload(wood: object) -> list[FoliageAnchor]:
     try:
         payload = wood.get(ANCHOR_PAYLOAD_KEY)  # type: ignore[attr-defined]
@@ -155,3 +190,17 @@ def load_anchor_payload(wood: object) -> list[FoliageAnchor]:
             "Tree has no complete-graph foliage anchors; regenerate it with this MTree version"
         )
     return decode_anchor_payload(payload)
+
+
+def load_retained_branch_ids(
+    wood: object, anchors: Iterable[FoliageAnchor]
+) -> frozenset[int]:
+    try:
+        retained_branch_ids = wood.get(RETAINED_BRANCH_IDS_KEY)  # type: ignore[attr-defined]
+    except AttributeError as exc:
+        raise ValueError("Selected object cannot store foliage branch metadata") from exc
+    if retained_branch_ids is None:
+        raise ValueError(
+            "Tree has no authoritative retained-branch report; regenerate it with this MTree version"
+        )
+    return validate_retained_branch_ids(retained_branch_ids, anchors)

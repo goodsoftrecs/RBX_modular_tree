@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "rbx_modular_tree"
 name = "RBX Modular Tree"
-version = "5.5.4"
+version = "5.5.8"
 website = "https://github.com/goodsoftrecs/RBX_modular_tree"
 tagline = "Procedural tree generation with low-detail game output"
 maintainer = "goodsoftrecs"

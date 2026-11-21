@@ -299,6 +299,10 @@ def organize_tree_object(
     if hasattr(wood, "mtree_foliage_cluster_count"):
         wood.mtree_foliage_cluster_count = 30
         wood.mtree_foliage_card_scale = 1.0
+        wood.mtree_foliage_branch_spacing = 1.0
+        wood.mtree_foliage_branch_card_length = 1.5
+        wood.mtree_foliage_primary_card_length = 2.0
+        wood.mtree_foliage_length_variation = 0.0
         wood.mtree_foliage_branch_distance = 0.0
         wood.mtree_foliage_texture_rotation = 0.0
         wood.mtree_foliage_pair_rotation = 0.0

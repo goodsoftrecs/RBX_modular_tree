@@ -15,6 +15,7 @@ except ImportError:  # Pure unit tests import this module outside the Blender pa
 
 DEFAULT_V_ANGLE_DEGREES = 55.0
 DEFAULT_SCALE_REFERENCE_CLUSTERS = 30
+_SPACING_PHASE_FACTORS = (1.0, 0.75, 0.5, 0.25, 0.0)
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class CardPlacement:
     direction: tuple[float, float, float]
     normal: tuple[float, float, float]
     scale: float
+    length_scale: float = 1.0
     template_slot: int = 1
 
 
@@ -208,6 +210,75 @@ def eligible_anchor_indices(
     return eligible
 
 
+def foliage_branch_candidate_indices(
+    anchors: list[FoliageAnchor],
+    missing_branch_ids: frozenset[int] = frozenset(),
+    *,
+    include_primary_connections: bool = False,
+) -> list[int]:
+    """Return candidates for foliage-bearing primary and/or secondary branches."""
+
+    validated = [validate_anchor(anchor) for anchor in anchors]
+    minimum_depth = 1 if include_primary_connections else 2
+    branch_rows = [
+        (index, anchor)
+        for index, anchor in enumerate(validated)
+        if anchor.hierarchy_depth >= minimum_depth
+    ]
+    if not branch_rows:
+        layer_name = "primary or secondary" if include_primary_connections else "secondary"
+        raise ValueError(f"Complete tree graph has no {layer_name} foliage branches")
+
+    outer = [anchor for _, anchor in branch_rows if anchor.branch_progress >= 0.2]
+    if not outer:
+        raise ValueError("Foliage branches have no outward anchors")
+    radius_cutoff = _percentile([anchor.radius for anchor in outer], 0.82)
+
+    branches: dict[int, list[int]] = {}
+    for index, anchor in branch_rows:
+        branches.setdefault(anchor.branch_id, []).append(index)
+
+    candidates: list[int] = []
+    for branch_id in sorted(branches):
+        indices = sorted(
+            branches[branch_id],
+            key=lambda index: (validated[index].branch_progress, index),
+        )
+        roots = [
+            index
+            for index in indices
+            if validated[index].branch_progress <= 1e-6
+        ]
+        branch_outer = [
+            index
+            for index in indices
+            if validated[index].branch_progress >= 0.2
+            and (
+                branch_id in missing_branch_ids
+                or validated[index].radius <= radius_cutoff + 1e-9
+            )
+        ]
+        if not roots or not branch_outer:
+            continue
+        candidates.append(roots[0])
+        candidates.extend(branch_outer)
+
+    if not candidates:
+        raise ValueError(
+            "Complete tree graph has no foliage-bearing branch connections"
+        )
+    return candidates
+
+
+def secondary_branch_candidate_indices(
+    anchors: list[FoliageAnchor],
+    missing_branch_ids: frozenset[int] = frozenset(),
+) -> list[int]:
+    """Compatibility wrapper for secondary-only candidate selection."""
+
+    return foliage_branch_candidate_indices(anchors, missing_branch_ids)
+
+
 def classify_missing_branch_ids(
     anchors: list[FoliageAnchor],
     distance_to_wood: Callable[[tuple[float, float, float]], float],
@@ -273,20 +344,111 @@ def _anchor_scores(
     return scores
 
 
-def _select_physical_branch_indices(
-    anchors: list[FoliageAnchor], eligible: list[int], count: int, rng: random.Random
-) -> list[int]:
-    """Consume visible branches round-robin from their tips toward their trunks."""
-
-    if count <= 0 or not eligible:
-        return []
+def _group_ordered_branch_indices(
+    anchors: list[FoliageAnchor],
+    eligible: list[int],
+    *,
+    reverse_progress: bool,
+) -> dict[int, list[int]]:
     branches: dict[int, list[int]] = {}
     for index in eligible:
         branches.setdefault(anchors[index].branch_id, []).append(index)
     for indices in branches.values():
         indices.sort(
-            key=lambda index: (-anchors[index].branch_progress, index)
+            key=lambda index: (
+                -anchors[index].branch_progress
+                if reverse_progress
+                else anchors[index].branch_progress,
+                index,
+            )
         )
+    return branches
+
+
+def _is_spaced_from_selected(
+    anchors: list[FoliageAnchor],
+    candidate: int,
+    selected: list[int],
+    minimum_spacing: float,
+) -> bool:
+    if minimum_spacing <= 0.0:
+        return True
+    minimum_squared = minimum_spacing * minimum_spacing
+    return all(
+        _distance_squared(
+            anchors[candidate].position, anchors[selected_index].position
+        )
+        + 1e-12
+        >= minimum_squared
+        for selected_index in selected
+    )
+
+
+def _select_spaced_branch_indices(
+    anchors: list[FoliageAnchor],
+    branches: dict[int, list[int]],
+    branch_order: list[int],
+    count: int,
+    base_spacing: float,
+    selected_prefix: list[int] | None = None,
+) -> list[int]:
+    """Select branch candidates in fixed spacing phases with per-branch cursors."""
+
+    if count <= 0 or not branches:
+        return []
+    remaining = {branch_id: indices.copy() for branch_id, indices in branches.items()}
+    selected = list(selected_prefix or [])
+    prefix_length = len(selected)
+
+    for phase_factor in _SPACING_PHASE_FACTORS:
+        phase_spacing = base_spacing * phase_factor
+        while len(selected) - prefix_length < count:
+            added = False
+            for branch_id in branch_order:
+                candidates = remaining[branch_id]
+                accepted_offset = next(
+                    (
+                        offset
+                        for offset, candidate in enumerate(candidates)
+                        if _is_spaced_from_selected(
+                            anchors, candidate, selected, phase_spacing
+                        )
+                    ),
+                    None,
+                )
+                if accepted_offset is None:
+                    continue
+                candidate = candidates[accepted_offset]
+                # This list is the branch cursor. Once spacing makes us scan past
+                # an anchor, consuming the whole prefix prevents a later tighter
+                # phase from walking back toward the tip/junction.
+                del candidates[: accepted_offset + 1]
+                selected.append(candidate)
+                added = True
+                if len(selected) - prefix_length == count:
+                    break
+            if not added:
+                break
+        if len(selected) - prefix_length == count:
+            break
+    return selected[prefix_length:]
+
+
+def _select_physical_branch_indices(
+    anchors: list[FoliageAnchor],
+    eligible: list[int],
+    count: int,
+    rng: random.Random,
+    minimum_spacing: float,
+    selected_prefix: list[int] | None = None,
+) -> list[int]:
+    """Consume retained secondary branches from connection to tip."""
+
+    if count <= 0 or not eligible:
+        return []
+    branches = _group_ordered_branch_indices(
+        anchors, eligible, reverse_progress=False
+    )
 
     scores = _anchor_scores(anchors, eligible)
     branch_jitter = {
@@ -295,26 +457,37 @@ def _select_physical_branch_indices(
     branch_order = sorted(
         branches,
         key=lambda branch_id: (
-            scores[branches[branch_id][0]] + branch_jitter[branch_id]
+            max(scores[index] for index in branches[branch_id])
+            + branch_jitter[branch_id]
         ),
         reverse=True,
     )
 
-    selected: list[int] = []
-    layer = 0
-    while len(selected) < count:
-        added = False
+    selected = list(selected_prefix or [])
+    prefix_length = len(selected)
+    remaining = {branch_id: indices.copy() for branch_id, indices in branches.items()}
+    if any(
+        candidates
+        and anchors[candidates[0]].branch_progress <= 1e-6
+        for candidates in remaining.values()
+    ):
         for branch_id in branch_order:
-            indices = branches[branch_id]
-            if layer < len(indices):
-                selected.append(indices[layer])
-                added = True
-                if len(selected) == count:
-                    break
-        if not added:
-            break
-        layer += 1
-    return selected
+            candidates = remaining[branch_id]
+            if not candidates or anchors[candidates[0]].branch_progress > 1e-6:
+                continue
+            selected.append(candidates.pop(0))
+            if len(selected) - prefix_length == count:
+                return selected[prefix_length:]
+
+    selected.extend(_select_spaced_branch_indices(
+        anchors,
+        remaining,
+        branch_order,
+        count - (len(selected) - prefix_length),
+        minimum_spacing,
+        selected,
+    ))
+    return selected[prefix_length:]
 
 
 def _select_missing_branch_indices(
@@ -322,34 +495,44 @@ def _select_missing_branch_indices(
     eligible: list[int],
     count: int,
     rng: random.Random,
+    minimum_spacing: float,
+    selected_prefix: list[int] | None = None,
 ) -> list[int]:
-    """Consume missing branches round-robin from attachment-side progress outward."""
+    """Consume omitted secondary branches from connection to tip."""
 
     if count <= 0 or not eligible:
         return []
-    branches: dict[int, list[int]] = {}
-    for index in eligible:
-        branches.setdefault(anchors[index].branch_id, []).append(index)
-    for indices in branches.values():
-        indices.sort(key=lambda index: (anchors[index].branch_progress, index))
+    branches = _group_ordered_branch_indices(
+        anchors, eligible, reverse_progress=False
+    )
 
     branch_order = sorted(branches)
     rng.shuffle(branch_order)
-    selected: list[int] = []
-    layer = 0
-    while len(selected) < count:
-        added = False
+    selected = list(selected_prefix or [])
+    prefix_length = len(selected)
+    remaining = {branch_id: indices.copy() for branch_id, indices in branches.items()}
+    if any(
+        candidates
+        and anchors[candidates[0]].branch_progress <= 1e-6
+        for candidates in remaining.values()
+    ):
         for branch_id in branch_order:
-            indices = branches[branch_id]
-            if layer < len(indices):
-                selected.append(indices[layer])
-                added = True
-                if len(selected) == count:
-                    break
-        if not added:
-            break
-        layer += 1
-    return selected
+            candidates = remaining[branch_id]
+            if not candidates or anchors[candidates[0]].branch_progress > 1e-6:
+                continue
+            selected.append(candidates.pop(0))
+            if len(selected) - prefix_length == count:
+                return selected[prefix_length:]
+
+    selected.extend(_select_spaced_branch_indices(
+        anchors,
+        remaining,
+        branch_order,
+        count - (len(selected) - prefix_length),
+        minimum_spacing,
+        selected,
+    ))
+    return selected[prefix_length:]
 
 
 def select_anchor_indices_with_branch_priority(
@@ -358,28 +541,63 @@ def select_anchor_indices_with_branch_priority(
     count: int,
     rng: random.Random,
     missing_branch_ids: frozenset[int],
+    minimum_spacing: float = 0.0,
 ) -> list[int]:
-    """Select physical anchors first, then missing branches connection-outward."""
+    """Select primary connections, secondary connections, then outward anchors."""
 
-    physical = [
-        index for index in eligible if anchors[index].branch_id not in missing_branch_ids
-    ]
-    missing = [
-        index for index in eligible if anchors[index].branch_id in missing_branch_ids
-    ]
+    def partition(indices: list[int]) -> tuple[list[int], list[int]]:
+        return (
+            [
+                index
+                for index in indices
+                if anchors[index].branch_id not in missing_branch_ids
+            ],
+            [
+                index
+                for index in indices
+                if anchors[index].branch_id in missing_branch_ids
+            ],
+        )
 
+    primary_connections = [
+        index
+        for index in eligible
+        if anchors[index].hierarchy_depth == 1
+        and anchors[index].branch_progress <= 1e-6
+    ]
+    secondary_connections = [
+        index
+        for index in eligible
+        if anchors[index].hierarchy_depth >= 2
+        and anchors[index].branch_progress <= 1e-6
+    ]
+    outward = [
+        index for index in eligible if anchors[index].branch_progress > 1e-6
+    ]
     selected: list[int] = []
-    physical_count = min(count, len(physical))
-    if physical_count:
-        selected.extend(
-            _select_physical_branch_indices(anchors, physical, physical_count, rng)
-        )
-
-    remaining = count - len(selected)
-    if remaining and missing:
-        selected.extend(
-            _select_missing_branch_indices(anchors, missing, remaining, rng)
-        )
+    for candidates in (primary_connections, secondary_connections, outward):
+        physical, missing = partition(candidates)
+        for group, selector in (
+            (physical, _select_physical_branch_indices),
+            (missing, _select_missing_branch_indices),
+        ):
+            remaining = count - len(selected)
+            if remaining <= 0:
+                break
+            take = min(remaining, len(group))
+            if take:
+                selected.extend(
+                    selector(
+                        anchors,
+                        group,
+                        take,
+                        rng,
+                        minimum_spacing,
+                        selected,
+                    )
+                )
+        if len(selected) == count:
+            break
 
     if len(selected) < count:
         if not selected:
@@ -420,6 +638,12 @@ def build_card_layout(
     pair_rotation_radians: float = 0.0,
     template_slots: tuple[int, ...] = (1,),
     missing_branch_ids: frozenset[int] = frozenset(),
+    branch_spacing: float = 1.0,
+    template_footprint: float = 1.0,
+    branch_card_length: float = 1.5,
+    primary_card_length: float = 2.0,
+    length_variation: float = 0.0,
+    include_primary_connections: bool = False,
 ) -> list[CardPlacement]:
     """Return exactly two branch-aligned cards for every requested cluster."""
 
@@ -433,9 +657,25 @@ def build_card_layout(
         raise ValueError("Card V angle must be between 1 and 179 degrees")
     if not math.isfinite(pair_rotation_radians):
         raise ValueError("Card pair rotation must be finite")
+    if not math.isfinite(branch_spacing) or not 0.1 <= branch_spacing <= 3.0:
+        raise ValueError("Branch Spacing must be between 0.1x and 3.0x")
+    if not math.isfinite(template_footprint) or template_footprint <= 0.0:
+        raise ValueError("Foliage template footprint must be finite and greater than zero")
+    if not math.isfinite(branch_card_length) or not 0.5 <= branch_card_length <= 3.0:
+        raise ValueError("Branch Card Length must be between 0.5x and 3.0x")
+    if not math.isfinite(primary_card_length) or not 0.5 <= primary_card_length <= 4.0:
+        raise ValueError("Primary Card Length must be between 0.5x and 4.0x")
+    if not math.isfinite(length_variation) or not 0.0 <= length_variation <= 0.5:
+        raise ValueError("Length Variation must be between 0% and 50%")
 
     validated = [validate_anchor(anchor) for anchor in anchors]
-    eligible = eligible_anchor_indices(validated, missing_branch_ids)
+    eligible = foliage_branch_candidate_indices(
+        validated,
+        missing_branch_ids,
+        include_primary_connections=include_primary_connections,
+    )
+    base_scale = _base_scale(validated, eligible) * scale_multiplier
+    minimum_spacing = base_scale * template_footprint * branch_spacing
     selection_rng = random.Random(int(seed) ^ 0x4C957F2D)
     selected = select_anchor_indices_with_branch_priority(
         validated,
@@ -443,11 +683,12 @@ def build_card_layout(
         cluster_count,
         selection_rng,
         missing_branch_ids,
+        minimum_spacing,
     )
     assigned_slots = _template_slots_for_clusters(cluster_count, template_slots, seed)
-    base_scale = _base_scale(validated, eligible) * scale_multiplier
     half_angle = math.radians(v_angle_degrees) * 0.5
     appearance_rng = random.Random(int(seed) ^ 0xA341316C)
+    length_rng = random.Random(int(seed) ^ 0x27D4EB2F)
 
     placements: list[CardPlacement] = []
     repetitions: dict[int, int] = {}
@@ -472,6 +713,14 @@ def build_card_layout(
             for axis in range(3)
         )
         varied_scale = base_scale * appearance_rng.uniform(0.88, 1.12)
+        base_length = (
+            primary_card_length
+            if anchor.hierarchy_depth == 1
+            else branch_card_length
+        )
+        effective_length = base_length * length_rng.uniform(
+            1.0 - length_variation, 1.0 + length_variation
+        )
 
         for card_index, angle in enumerate((-half_angle, half_angle)):
             card_normal = _normalize(_rotate_about_axis(normal, direction, angle))
@@ -484,6 +733,7 @@ def build_card_layout(
                     direction=direction,
                     normal=card_normal,
                     scale=varied_scale,
+                    length_scale=effective_length,
                     template_slot=assigned_slots[cluster_index],
                 )
             )

@@ -6,7 +6,6 @@ import math
 
 import bpy
 from mathutils import Matrix, Vector
-from mathutils.bvhtree import BVHTree
 
 from .canopy_lobes import (
     GENERATED_TREES_NAME,
@@ -19,11 +18,14 @@ from .canopy_lobes import (
     find_wood_for_object,
     organize_tree_object,
 )
-from .foliage_anchor_data import FoliageAnchor, load_anchor_payload
+from .foliage_anchor_data import (
+    FoliageAnchor,
+    load_anchor_payload,
+    load_retained_branch_ids,
+)
 from .foliage_card_layout import (
     CardPlacement,
     build_card_layout,
-    classify_missing_branch_ids,
     rotate_card_layout_about_z,
     rotate_uv_within_bounds,
 )
@@ -36,6 +38,21 @@ ROLE_FOLIAGE_SET_LABEL = "FOLIAGE_CARD_SET_LABEL"
 FOLIAGE_SET_KEY = "mtree_foliage_set_id"
 FOLIAGE_SLOT_KEY = "mtree_foliage_slot"
 GENERATED_MATERIAL_KEY = "mtree_generated_foliage_material"
+BRANCH_LAYERS_SECONDARY = "SECONDARY_ONLY"
+BRANCH_LAYERS_PRIMARY_SECONDARY = "PRIMARY_SECONDARY"
+CONIFER_PRIMARY_SPECIES = frozenset({"PINE", "CEDAR", "SEQUOIA", "HEMLOCK"})
+BRANCH_LAYER_ITEMS = (
+    (
+        BRANCH_LAYERS_SECONDARY,
+        "Secondary Only",
+        "Start foliage cards where secondary branches connect",
+    ),
+    (
+        BRANCH_LAYERS_PRIMARY_SECONDARY,
+        "Primary + Secondary",
+        "Also start long foliage cards where primary branches meet the trunk",
+    ),
+)
 
 FOLIAGE_SET_ITEMS = (
     ("OAK", "Oak", "Oak foliage atlas set"),
@@ -157,6 +174,27 @@ def default_tree_foliage_set_id(preset: str, selected_set_id: str) -> str:
     if candidate in _SET_LABELS and foliage_set_exists(candidate):
         return candidate
     return "NONE"
+
+
+def default_foliage_branch_layers(species_id: str | None) -> str:
+    """Return the authored species default without removing per-tree overrides."""
+
+    return (
+        BRANCH_LAYERS_PRIMARY_SECONDARY
+        if str(species_id or "").upper() in CONIFER_PRIMARY_SPECIES
+        else BRANCH_LAYERS_SECONDARY
+    )
+
+
+def ensure_foliage_branch_layers_default(wood: bpy.types.Object) -> str:
+    """Migrate an existing tree only when the artist has never set the control."""
+
+    property_name = "mtree_foliage_branch_layers"
+    if not wood.is_property_set(property_name):
+        wood.mtree_foliage_branch_layers = default_foliage_branch_layers(
+            wood.get(TREE_SPECIES_KEY)
+        )
+    return str(wood.mtree_foliage_branch_layers)
 
 
 def _set_id_from_context(context: bpy.types.Context) -> str:
@@ -347,38 +385,34 @@ def _find_tree_collection(tree_id: str) -> bpy.types.Collection | None:
 def _missing_branch_ids_for_wood(
     wood: bpy.types.Object, anchors: list[FoliageAnchor]
 ) -> frozenset[int]:
-    """Classify complete-graph branches against the actual tree-local wood surface."""
+    """Return complete-graph branches omitted by the authoritative native mesher."""
 
-    if wood.type != "MESH" or not wood.data.vertices or not wood.data.polygons:
-        raise ValueError("Generated wood must contain mesh geometry for foliage classification")
-    vertices = [vertex.co.copy() for vertex in wood.data.vertices]
-    polygons = [tuple(polygon.vertices) for polygon in wood.data.polygons]
-    bvh = BVHTree.FromPolygons(vertices, polygons, all_triangles=False)
-    if bvh is None:
-        raise ValueError("Could not build a wood surface query for foliage classification")
-
-    extents = [
-        max(vertex[axis] for vertex in vertices)
-        - min(vertex[axis] for vertex in vertices)
-        for axis in range(3)
-    ]
-    tree_extent = max(max(extents), 1e-6)
-
-    def distance_to_wood(position: tuple[float, float, float]) -> float:
-        nearest = bvh.find_nearest(Vector(position))
-        if nearest is None:
-            raise ValueError("Could not measure a foliage anchor against generated wood")
-        return float(nearest[3])
-
-    return frozenset(
-        classify_missing_branch_ids(anchors, distance_to_wood, tree_extent)
-    )
+    retained_branch_ids = load_retained_branch_ids(wood, anchors)
+    non_trunk_branch_ids = {
+        anchor.branch_id for anchor in anchors if anchor.hierarchy_depth > 0
+    }
+    return frozenset(non_trunk_branch_ids - retained_branch_ids)
 
 
 def _template_local_matrix(template: bpy.types.Object) -> Matrix:
     return template.rotation_euler.to_matrix().to_4x4() @ Matrix.Diagonal(
         (template.scale.x, template.scale.y, template.scale.z, 1.0)
     )
+
+
+def _template_footprint(templates: list[bpy.types.Object]) -> float:
+    """Return the largest authored card diagonal before generated placement scale."""
+
+    footprint = 0.0
+    for template in templates:
+        template_matrix = _template_local_matrix(template)
+        vertices = [template_matrix @ vertex.co for vertex in template.data.vertices]
+        for index, first in enumerate(vertices):
+            for second in vertices[:index]:
+                footprint = max(footprint, (first - second).length)
+    if not math.isfinite(footprint) or footprint <= 1e-8:
+        raise ValueError("Foliage templates must have a non-zero finite footprint")
+    return footprint
 
 
 def _axis_basis(long_axis: Vector, normal: Vector) -> Matrix:
@@ -480,8 +514,15 @@ def _card_transform(
     return (
         Matrix.Translation(target_position)
         @ _axis_basis(target_long, target_normal)
+        @ Matrix.Diagonal(
+            (
+                placement.scale,
+                placement.scale,
+                placement.scale * placement.length_scale,
+                1.0,
+            )
+        )
         @ _axis_basis(source_long, source_normal).inverted()
-        @ Matrix.Scale(placement.scale, 4)
         @ Matrix.Translation(-attachment)
         @ _template_local_matrix(template)
     )
@@ -596,6 +637,7 @@ def refresh_foliage_cards_for_object(
     templates = resolve_foliage_templates(set_id)
     anchors = load_anchor_payload(wood)
     missing_branch_ids = _missing_branch_ids_for_wood(wood, anchors)
+    branch_layers = ensure_foliage_branch_layers_default(wood)
     placements = build_card_layout(
         anchors,
         cluster_count=int(wood.mtree_foliage_cluster_count),
@@ -604,6 +646,14 @@ def refresh_foliage_cards_for_object(
         pair_rotation_radians=float(wood.mtree_foliage_pair_rotation),
         template_slots=(1, 2, 3, 4),
         missing_branch_ids=missing_branch_ids,
+        branch_spacing=float(wood.mtree_foliage_branch_spacing),
+        template_footprint=_template_footprint(templates),
+        branch_card_length=float(wood.mtree_foliage_branch_card_length),
+        primary_card_length=float(wood.mtree_foliage_primary_card_length),
+        length_variation=float(wood.mtree_foliage_length_variation) * 0.01,
+        include_primary_connections=(
+            branch_layers == BRANCH_LAYERS_PRIMARY_SECONDARY
+        ),
     )
     placements = rotate_card_layout_about_z(
         placements, float(wood.mtree_foliage_canopy_rotation)
@@ -644,6 +694,19 @@ def refresh_foliage_cards_for_object(
     foliage["mtree_foliage_card_count"] = len(placements)
     foliage["mtree_foliage_branch_distance"] = float(
         wood.mtree_foliage_branch_distance
+    )
+    foliage["mtree_foliage_branch_spacing"] = float(
+        wood.mtree_foliage_branch_spacing
+    )
+    foliage["mtree_foliage_branch_card_length"] = float(
+        wood.mtree_foliage_branch_card_length
+    )
+    foliage["mtree_foliage_primary_card_length"] = float(
+        wood.mtree_foliage_primary_card_length
+    )
+    foliage["mtree_foliage_branch_layers"] = branch_layers
+    foliage["mtree_foliage_length_variation"] = float(
+        wood.mtree_foliage_length_variation
     )
     foliage["mtree_foliage_variant_slots"] = [
         placements[index].template_slot for index in range(0, len(placements), 2)
@@ -704,7 +767,7 @@ def register_properties() -> None:
         description="Exact number of shallow-V foliage card pairs",
         default=30,
         min=1,
-        max=256,
+        max=512,
     )
     bpy.types.Object.mtree_foliage_card_scale = bpy.props.FloatProperty(
         name="Card Scale",
@@ -712,6 +775,45 @@ def register_properties() -> None:
         default=1.0,
         min=0.1,
         max=12.0,
+    )
+    bpy.types.Object.mtree_foliage_branch_spacing = bpy.props.FloatProperty(
+        name="Branch Spacing",
+        description=(
+            "Longitudinal cluster spacing relative to the generated foliage card footprint"
+        ),
+        default=1.0,
+        min=0.1,
+        max=3.0,
+    )
+    bpy.types.Object.mtree_foliage_branch_card_length = bpy.props.FloatProperty(
+        name="Branch Card Length",
+        description="Longitudinal card multiplier; width remains controlled by Card Scale",
+        default=1.5,
+        min=0.5,
+        max=3.0,
+    )
+    bpy.types.Object.mtree_foliage_primary_card_length = bpy.props.FloatProperty(
+        name="Primary Card Length",
+        description="Longitudinal multiplier for cards beginning at trunk connections",
+        default=2.0,
+        min=0.5,
+        max=4.0,
+    )
+    bpy.types.Object.mtree_foliage_branch_layers = bpy.props.EnumProperty(
+        name="Branch Start Layers",
+        description="Choose which branch connection depths receive starting cards",
+        items=BRANCH_LAYER_ITEMS,
+        default=BRANCH_LAYERS_SECONDARY,
+    )
+    bpy.types.Object.mtree_foliage_length_variation = bpy.props.FloatProperty(
+        name="Length Variation",
+        description=(
+            "Deterministic per-cluster variation around Branch Card Length; zero is off"
+        ),
+        subtype="PERCENTAGE",
+        default=0.0,
+        min=0.0,
+        max=50.0,
     )
     bpy.types.Object.mtree_foliage_branch_distance = bpy.props.FloatProperty(
         name="Branch Distance",
@@ -762,6 +864,11 @@ def unregister_properties() -> None:
         "mtree_foliage_pair_rotation",
         "mtree_foliage_texture_rotation",
         "mtree_foliage_branch_distance",
+        "mtree_foliage_length_variation",
+        "mtree_foliage_branch_layers",
+        "mtree_foliage_primary_card_length",
+        "mtree_foliage_branch_card_length",
+        "mtree_foliage_branch_spacing",
         "mtree_foliage_card_scale",
         "mtree_foliage_cluster_count",
         "mtree_foliage_set_id",

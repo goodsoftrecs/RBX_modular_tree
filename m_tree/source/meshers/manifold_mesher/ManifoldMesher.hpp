@@ -2,6 +2,7 @@
 #include "../base_types/TreeMesher.hpp"
 #include <string>
 #include <tuple>
+#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -32,6 +33,7 @@ class ManifoldMesher : public TreeMesher
 	int longitudinal_stride = 1;
 	int max_branch_depth = -1;
 	float minimum_branch_radius_ratio = 0;
+	std::vector<int> retained_branch_ids;
 	Mesh mesh_tree(Tree& tree) override;
 };
 
