@@ -58,6 +58,39 @@ try:
     assert wood.mtree_lobe_count == 8
     assert wood.mtree_lobe_scale == 1.0
     assert any(collection.name == "Oak_1" for collection in wood.users_collection)
+    oak_collection = bpy.data.collections["Oak_1"]
+    generated_root = bpy.data.collections["MTree_GeneratedTrees"]
+    prefab_library = bpy.data.collections["RBX_PrefabLibrary_Placements"]
+    assert oak_collection in list(generated_root.children)
+    assert oak_collection in list(prefab_library.children)
+    assert oak_collection["rbx_enabled"] is False
+    assert oak_collection["rbx_prefab_key"] == "oak_1"
+    assert oak_collection["rbx_category"] == "tree"
+    assert oak_collection["rbx_alignment"] == "upright"
+    anchors = [
+        obj
+        for obj in oak_collection.objects
+        if obj.get("rbx_ground_anchor") is True
+    ]
+    assert len(anchors) == 1
+    anchor = anchors[0]
+    assert anchor.name == "RBX_GroundAnchor_Att"
+    assert anchor.type == "EMPTY"
+    assert anchor.parent is wood.parent
+    assert tuple(anchor.location) == (0.0, 0.0, 0.0)
+
+    # Repair is idempotent and preserves authored placement settings and anchor position.
+    oak_collection["rbx_enabled"] = True
+    anchor.location = (0.25, -0.5, 0.0)
+    canopy_lobes = importlib.import_module(
+        f"{repo_root.name}.python_classes.canopy_lobes"
+    )
+    canopy_lobes.organize_tree_object(wood)
+    assert oak_collection["rbx_enabled"] is True
+    assert tuple(anchor.location) == (0.25, -0.5, 0.0)
+    assert len(
+        [obj for obj in oak_collection.objects if obj.get("rbx_ground_anchor") is True]
+    ) == 1
 
     # Numbering advances within a species and restarts for a different species.
     oak_two = wood.copy()
@@ -73,14 +106,17 @@ try:
         if key in oak_two:
             del oak_two[key]
     bpy.context.scene.collection.objects.link(oak_two)
-    canopy_lobes = importlib.import_module(
-        f"{repo_root.name}.python_classes.canopy_lobes"
-    )
     canopy_lobes.organize_tree_object(
         oak_two, generation_seed=539, species_id="OAK", species_label="Oak"
     )
     assert oak_two.name == "Oak_2_Wood"
     assert oak_two.get("mtree_tree_number") == 2
+    oak_two_collection = bpy.data.collections["Oak_2"]
+    oak_two_anchor = next(
+        obj for obj in oak_two_collection.objects if obj.get("rbx_ground_anchor") is True
+    )
+    assert oak_two_collection in list(prefab_library.children)
+    assert oak_two_anchor.name == "RBX_GroundAnchor.001_Att"
 
     birch_one = wood.copy()
     birch_one.data = wood.data.copy()

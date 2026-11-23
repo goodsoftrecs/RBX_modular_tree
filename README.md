@@ -64,6 +64,13 @@ Generated hierarchies use readable per-species numbering such as `Oak_1`, `Oak_2
 The collection, root, wood, and generated foliage share that base name while internal UUID metadata
 continues to provide stable ownership.
 
+Each generated tree collection is also linked, not copied, beneath
+`RBX_PrefabLibrary_Placements`. Editing the tree through either Outliner location edits the same
+collection. MTree creates the required ground-origin `RBX_GroundAnchor_Att` marker and initializes
+the RBX prefab fields with category `tree`, upright alignment, and `rbx_enabled = false`. Select
+the tree collection in either location and use RBX World Authoring's
+**Initialize/Update Selection as Prefab** when it is ready for placement and FBX refresh.
+
 Focused overrides adjust Overall Size, Trunk Thickness, Branch Length, Branch Density, Branch
 Spread, Branch Droop, Randomness, and the species' Secondary Branch layer. Neutral `1.0` values
 preserve the authored species silhouette. Trunk Thickness changes radii without adding radial

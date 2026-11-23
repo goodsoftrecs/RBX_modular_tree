@@ -11,6 +11,7 @@ import bpy
 from mathutils import Euler, Matrix, Vector
 
 from .canopy_layout import Anchor, build_lobe_layout
+from .world_authoring import ensure_tree_prefab
 
 
 CANOPY_LIBRARY_NAME = "MTree_CanopyLibrary"
@@ -245,6 +246,12 @@ def organize_tree_object(
     if not _is_tree_mesh(wood):
         raise ValueError("Select an MTree-generated wood mesh")
     if wood.get(ROLE_KEY) == ROLE_WOOD and wood.get(TREE_ID_KEY):
+        tree_id = str(wood[TREE_ID_KEY])
+        tree_collection = _find_tree_collection(tree_id)
+        root = _find_role_object(tree_id, ROLE_ROOT)
+        if tree_collection is None or root is None:
+            raise ValueError("Organized MTree wood is missing its collection or root")
+        ensure_tree_prefab(tree_collection, root)
         return wood
 
     seed = int(generation_seed if generation_seed is not None else _parse_seed(wood.name))
@@ -309,6 +316,7 @@ def organize_tree_object(
         wood.mtree_foliage_pair_rotation = 0.0
         wood.mtree_foliage_canopy_rotation = 0.0
         wood.mtree_foliage_seed = seed
+    ensure_tree_prefab(tree_collection, root)
     return wood
 
 
