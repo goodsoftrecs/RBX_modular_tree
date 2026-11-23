@@ -10,6 +10,7 @@ from bpy.utils import register_class, unregister_class
 
 from .canopy_lobes import (
     ensure_canopy_templates,
+    layout_generated_tree_gallery,
     organize_tree_object,
     refresh_canopy_for_object,
 )
@@ -250,6 +251,8 @@ class QuickGenerateTree(bpy.types.Operator):
                     if preset and preset.leaf_params:
                         leaf_kwargs = preset.leaf_params
                     distribute_leaves(active_obj, leaf_object=leaf_obj, **leaf_kwargs)
+
+            layout_generated_tree_gallery()
 
             elapsed = time.time() - start_time
             self.report({"INFO"}, f"Generated tree (seed={seed}) in {elapsed:.2f}s")
@@ -547,6 +550,23 @@ class RefreshFoliageCards(bpy.types.Operator):
             return {"CANCELLED"}
 
 
+class RelayoutGeneratedTrees(bpy.types.Operator):
+    """Repair the bounds-based generated-tree gallery layout."""
+
+    bl_idname = "mtree.relayout_generated_trees"
+    bl_label = "Re-layout Generated Trees"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        try:
+            collections = layout_generated_tree_gallery()
+            self.report({"INFO"}, f"Re-laid out {len(collections)} generated trees")
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Failed to re-layout generated trees: {exc}")
+            return {"CANCELLED"}
+
+
 class GenerateLeaf(bpy.types.Operator):
     """Generate a procedural leaf mesh from LeafShapeNode parameters."""
 
@@ -668,6 +688,7 @@ _classes = [
     RefreshCanopyLobes,
     CreateFoliageCardTemplate,
     RefreshFoliageCards,
+    RelayoutGeneratedTrees,
     ExportPivotPainter,
     GenerateLeaf,
     ApplyLeafPreset,

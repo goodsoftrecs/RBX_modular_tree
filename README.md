@@ -71,6 +71,13 @@ the RBX prefab fields with category `tree`, upright alignment, and `rbx_enabled 
 the tree collection in either location and use RBX World Authoring's
 **Initialize/Update Selection as Prefab** when it is ready for placement and FBX refresh.
 
+Generated prefab sources form a viewport gallery beyond the RBX foliage authoring rows. Each
+species has its own row, numbered variations run left-to-right, and complete tree bounds receive a
+20-unit clear aisle in both directions. The complete gallery is elevated to `Z = 350` so terrain
+preview meshes do not intersect the authoring trees. Generation and foliage refreshes reflow the gallery
+automatically. Use **Re-layout Generated Trees** in the MTree panel to repair an existing scene
+without regenerating any tree.
+
 Focused overrides adjust Overall Size, Trunk Thickness, Branch Length, Branch Density, Branch
 Spread, Branch Droop, Randomness, and the species' Secondary Branch layer. Neutral `1.0` values
 preserve the authored species silhouette. Trunk Thickness changes radii without adding radial

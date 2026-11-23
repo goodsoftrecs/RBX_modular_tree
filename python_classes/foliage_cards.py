@@ -16,6 +16,7 @@ from .canopy_lobes import (
     TREE_NUMBER_KEY,
     TREE_SPECIES_KEY,
     find_wood_for_object,
+    layout_generated_tree_gallery,
     organize_tree_object,
 )
 from .foliage_anchor_data import (
@@ -769,6 +770,7 @@ def refresh_foliage_cards_for_object(
         generated_material.name = f"{tree_collection.name}_FoliageMaterial"
     foliage.name = f"{tree_collection.name}_Foliage"
     new_mesh.name = foliage.name
+    layout_generated_tree_gallery()
     return foliage, int(wood.mtree_foliage_cluster_count), len(placements)
 
 

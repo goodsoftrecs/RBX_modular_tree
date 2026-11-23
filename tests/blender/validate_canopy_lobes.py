@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 
 repo_root = Path(__file__).resolve().parents[2]
@@ -23,6 +24,21 @@ addon.register()
 
 try:
     profiles = importlib.import_module(f"{repo_root.name}.python_classes.game_output_profiles")
+
+    def xy_bounds(collection):
+        points = [
+            obj.matrix_world @ Vector(corner)
+            for obj in collection.all_objects
+            if obj.type == "MESH"
+            for corner in obj.bound_box
+        ]
+        assert points
+        return (
+            min(point.x for point in points),
+            max(point.x for point in points),
+            min(point.y for point in points),
+            max(point.y for point in points),
+        )
 
     assert bpy.ops.mtree.create_canopy_lobes() == {"FINISHED"}
     library = bpy.data.collections.get("MTree_CanopyLibrary")
@@ -136,6 +152,33 @@ try:
     )
     assert birch_one.name == "Birch_1_Wood"
     assert birch_one.get("mtree_tree_number") == 1
+
+    oak_one_bounds = xy_bounds(oak_collection)
+    oak_two_bounds = xy_bounds(oak_two_collection)
+    birch_bounds = xy_bounds(bpy.data.collections["Birch_1"])
+    assert oak_one_bounds[2] >= 100.0
+    assert oak_two_bounds[2] >= 100.0
+    assert birch_bounds[2] >= 100.0
+    for collection in (oak_collection, oak_two_collection, bpy.data.collections["Birch_1"]):
+        root = next(obj for obj in collection.objects if obj.get("mtree_role") == "ROOT")
+        assert root.matrix_world.translation.z == 350.0
+    assert abs((oak_one_bounds[2] + oak_one_bounds[3]) - (oak_two_bounds[2] + oak_two_bounds[3])) < 1e-5
+    assert oak_two_bounds[0] - oak_one_bounds[1] >= 20.0 - 1e-5
+    assert min(oak_one_bounds[2], oak_two_bounds[2]) - birch_bounds[3] >= 20.0 - 1e-5
+
+    positions_before_relayout = {
+        collection.name: tuple(
+            next(obj for obj in collection.objects if obj.get("mtree_role") == "ROOT").location
+        )
+        for collection in (oak_collection, oak_two_collection, bpy.data.collections["Birch_1"])
+    }
+    assert bpy.ops.mtree.relayout_generated_trees() == {"FINISHED"}
+    assert positions_before_relayout == {
+        collection.name: tuple(
+            next(obj for obj in collection.objects if obj.get("mtree_role") == "ROOT").location
+        )
+        for collection in (oak_collection, oak_two_collection, bpy.data.collections["Birch_1"])
+    }
 
     wood_vertices_before = [tuple(vertex.co) for vertex in wood.data.vertices]
     assert bpy.ops.mtree.refresh_canopy_lobes() == {"FINISHED"}

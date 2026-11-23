@@ -50,6 +50,7 @@ class MTREE_PT_QuickGenerate(bpy.types.Panel):
         leaf_row.prop(settings, "add_leaves")
         generate = box.operator("mtree.quick_generate", text="Generate Tree")
         generate.use_sidebar_settings = True
+        box.operator("mtree.relayout_generated_trees", text="Re-layout Generated Trees")
 
         if settings.branch_density > 1.25:
             box.label(text="Higher density may exceed the ~3K target", icon="INFO")

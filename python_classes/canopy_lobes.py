@@ -28,6 +28,9 @@ ROLE_ROOT = "ROOT"
 ROLE_WOOD = "WOOD"
 ROLE_FOLIAGE = "FOLIAGE"
 ROLE_TEMPLATE = "CANOPY_TEMPLATE"
+TREE_GALLERY_START_Y = 100.0
+TREE_GALLERY_AISLE = 20.0
+TREE_GALLERY_Z = 350.0
 
 
 def _link_collection_to_scene(collection: bpy.types.Collection) -> None:
@@ -235,6 +238,104 @@ def find_wood_for_object(obj: bpy.types.Object | None) -> bpy.types.Object | Non
     return None
 
 
+def _tree_xy_bounds_relative_to_root(
+    tree_collection: bpy.types.Collection, root: bpy.types.Object
+) -> tuple[float, float, float, float]:
+    points = [
+        obj.matrix_world @ Vector(corner)
+        for obj in tree_collection.all_objects
+        if obj.type == "MESH"
+        for corner in obj.bound_box
+    ]
+    root_position = root.matrix_world.translation
+    if not points:
+        return (-0.5, 0.5, -0.5, 0.5)
+    return (
+        min(point.x for point in points) - root_position.x,
+        max(point.x for point in points) - root_position.x,
+        min(point.y for point in points) - root_position.y,
+        max(point.y for point in points) - root_position.y,
+    )
+
+
+def layout_generated_tree_gallery() -> tuple[bpy.types.Collection, ...]:
+    """Arrange species rows using complete tree bounds and generous camera aisles."""
+
+    generated_root = bpy.data.collections.get(GENERATED_TREES_NAME)
+    if generated_root is None:
+        return ()
+    bpy.context.view_layer.update()
+
+    rows: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for tree_collection in generated_root.children:
+        if not tree_collection.get(TREE_ID_KEY):
+            continue
+        roots = [
+            obj
+            for obj in tree_collection.objects
+            if obj.get(ROLE_KEY) == ROLE_ROOT
+        ]
+        if len(roots) != 1:
+            raise ValueError(f"{tree_collection.name} must contain one MTree root")
+        root = roots[0]
+        minimum_x, maximum_x, minimum_y, maximum_y = (
+            _tree_xy_bounds_relative_to_root(tree_collection, root)
+        )
+        species = str(tree_collection.get(TREE_SPECIES_KEY, "")).strip().upper()
+        row_key = species or "__LEGACY__"
+        rows[row_key].append(
+            {
+                "collection": tree_collection,
+                "root": root,
+                "number": int(tree_collection.get(TREE_NUMBER_KEY, 0)),
+                "minimum_x": minimum_x,
+                "maximum_x": maximum_x,
+                "minimum_y": minimum_y,
+                "maximum_y": maximum_y,
+            }
+        )
+
+    row_cursor_y = TREE_GALLERY_START_Y
+    arranged = []
+    for row_key in sorted(rows, key=lambda key: (key == "__LEGACY__", key)):
+        trees = sorted(
+            rows[row_key],
+            key=lambda item: (
+                int(item["number"]) if int(item["number"]) > 0 else 2**31,
+                str(item["collection"].name).casefold(),
+            ),
+        )
+        widths = [
+            float(item["maximum_x"]) - float(item["minimum_x"])
+            for item in trees
+        ]
+        row_depth = max(
+            float(item["maximum_y"]) - float(item["minimum_y"])
+            for item in trees
+        )
+        total_width = sum(widths) + TREE_GALLERY_AISLE * (len(trees) - 1)
+        row_cursor_x = -total_width * 0.5
+        row_center_y = row_cursor_y + row_depth * 0.5
+
+        for item, width in zip(trees, widths, strict=True):
+            root = item["root"]
+            root_world = root.matrix_world.copy()
+            root_world.translation.x = row_cursor_x - float(item["minimum_x"])
+            relative_center_y = (
+                float(item["minimum_y"]) + float(item["maximum_y"])
+            ) * 0.5
+            root_world.translation.y = row_center_y - relative_center_y
+            root_world.translation.z = TREE_GALLERY_Z
+            root.matrix_world = root_world
+            row_cursor_x += width + TREE_GALLERY_AISLE
+            arranged.append(item["collection"])
+
+        row_cursor_y += row_depth + TREE_GALLERY_AISLE
+
+    bpy.context.view_layer.update()
+    return tuple(arranged)
+
+
 def organize_tree_object(
     wood: bpy.types.Object,
     generation_seed: int | None = None,
@@ -252,6 +353,7 @@ def organize_tree_object(
         if tree_collection is None or root is None:
             raise ValueError("Organized MTree wood is missing its collection or root")
         ensure_tree_prefab(tree_collection, root)
+        layout_generated_tree_gallery()
         return wood
 
     seed = int(generation_seed if generation_seed is not None else _parse_seed(wood.name))
@@ -317,6 +419,7 @@ def organize_tree_object(
         wood.mtree_foliage_canopy_rotation = 0.0
         wood.mtree_foliage_seed = seed
     ensure_tree_prefab(tree_collection, root)
+    layout_generated_tree_gallery()
     return wood
 
 
@@ -454,6 +557,7 @@ def refresh_canopy_for_object(active_object: bpy.types.Object | None) -> tuple[b
             bpy.data.meshes.remove(old_mesh)
     foliage.name = f"{tree_collection.name}_Foliage"
     new_mesh.name = foliage.name
+    layout_generated_tree_gallery()
     return foliage, len(placements)
 
 
