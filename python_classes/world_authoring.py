@@ -24,7 +24,9 @@ PREFAB_DEFAULTS = {
     "rbx_scale_max": 1.0,
     "rbx_slope_max_deg": 30.0,
     "rbx_spacing_radius": 8.0,
-    "rbx_biomes": "",
+    "rbx_regions": "",
+    "rbx_terrain_zones": "",
+    "rbx_surfaces": "",
     "rbx_schema_version": PREFAB_SCHEMA_VERSION,
 }
 
